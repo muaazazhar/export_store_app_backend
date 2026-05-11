@@ -22,6 +22,9 @@ export class Order {
   @Column('json')
   items: any;
 
+  @Column()
+  paymentMethod: string;
+
   @Column({ unique: true })
   receiptNumber: string;
 

@@ -12,6 +12,9 @@ export class Product {
   @Column('decimal')
   price: number;
 
+  @Column('decimal', { precision: 5, scale: 2, default: 0 })
+  discount: number;
+
   @Column({ type: 'bytea' })
   imageBlob: Buffer;
 

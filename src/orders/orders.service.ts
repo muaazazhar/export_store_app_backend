@@ -24,8 +24,18 @@ export class OrdersService {
 
   async create(userId: number, dto: CreateOrderDto): Promise<Order> {
     const address = dto.address?.trim();
+    const paymentMethod = dto.paymentMethod?.trim().toLowerCase();
     if (!address) {
       throw new BadRequestException('Delivery address is required');
+    }
+    if (!paymentMethod) {
+      throw new BadRequestException('Payment method is required');
+    }
+    const allowedPaymentMethods = ['cash_on_delivery', 'card', 'bank_transfer'];
+    if (!allowedPaymentMethods.includes(paymentMethod)) {
+      throw new BadRequestException(
+        'Payment method must be one of: cash_on_delivery, card, bank_transfer',
+      );
     }
     if (!Array.isArray(dto.items) || dto.items.length === 0) {
       throw new BadRequestException('At least one order item is required');
@@ -73,6 +83,7 @@ export class OrdersService {
     const order = this.ordersRepository.create({
       user,
       address,
+      paymentMethod,
       items: normalizedItems,
       receiptNumber: `RCP-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
       totalAmount,
@@ -111,7 +122,10 @@ export class OrdersService {
   }
 
   async getReceipt(orderId: number, userId: number, role: string) {
-    const order = await this.ordersRepository.findOne({ where: { id: orderId } });
+    const order = await this.ordersRepository.findOne({
+      where: { id: orderId },
+      relations: { user: true },
+    });
     if (!order) {
       throw new NotFoundException('Order not found');
     }
@@ -127,6 +141,7 @@ export class OrdersService {
       status: order.status,
       createdAt: order.createdAt,
       deliveryAddress: order.address,
+      paymentMethod: order.paymentMethod,
       items: order.items,
       totalAmount: Number(order.totalAmount),
       customer: {

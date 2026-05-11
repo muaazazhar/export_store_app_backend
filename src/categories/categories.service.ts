@@ -23,11 +23,17 @@ export class CategoriesService {
     private readonly categoriesRepository: Repository<Category>,
   ) {}
 
+  private buildApiBaseUrl(baseUrl: string): string {
+    const apiPrefix = process.env.API_PREFIX?.trim();
+    return apiPrefix ? `${baseUrl}/${apiPrefix}` : baseUrl;
+  }
+
   private toCategoryResponse(category: Category, baseUrl: string) {
+    const apiBaseUrl = this.buildApiBaseUrl(baseUrl);
     return {
       id: category.id,
       name: category.name,
-      imageUrl: `${baseUrl}/categories/${category.id}/image`,
+      imageUrl: `${apiBaseUrl}/categories/${category.id}/image`,
     };
   }
 

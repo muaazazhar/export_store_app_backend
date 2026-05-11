@@ -57,7 +57,7 @@ export class AuthService {
   }
 
   async login(dto: LoginDto) {
-    const identifier = dto.identifier?.trim().toLowerCase();
+    const identifier = (dto.identifier ?? dto.email)?.trim().toLowerCase();
     const password = dto.password?.trim();
     if (!identifier || !password) {
       throw new UnauthorizedException('Invalid credentials');

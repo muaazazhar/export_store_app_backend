@@ -26,17 +26,24 @@ export class ProductsService {
     private readonly categoriesRepository: Repository<Category>,
   ) {}
 
+  private buildApiBaseUrl(baseUrl: string): string {
+    const apiPrefix = process.env.API_PREFIX?.trim();
+    return apiPrefix ? `${baseUrl}/${apiPrefix}` : baseUrl;
+  }
+
   private toProductResponse(product: Product, baseUrl: string) {
+    const apiBaseUrl = this.buildApiBaseUrl(baseUrl);
     return {
       id: product.id,
       name: product.name,
       price: Number(product.price),
-      imageUrl: `${baseUrl}/products/${product.id}/image`,
+      discount: Number(product.discount ?? 0),
+      imageUrl: `${apiBaseUrl}/products/${product.id}/image`,
       category: product.category
         ? {
             id: product.category.id,
             name: product.category.name,
-            imageUrl: `${baseUrl}/categories/${product.category.id}/image`,
+            imageUrl: `${apiBaseUrl}/categories/${product.category.id}/image`,
           }
         : null,
     };
@@ -65,6 +72,10 @@ export class ProductsService {
     if (dto.price === undefined || Number(dto.price) <= 0) {
       throw new BadRequestException('Price must be greater than zero');
     }
+    const discount = dto.discount === undefined ? 0 : Number(dto.discount);
+    if (Number.isNaN(discount) || discount < 0 || discount > 100) {
+      throw new BadRequestException('Discount must be between 0 and 100');
+    }
     validateImageFile(file, true);
 
     const category = await this.categoriesRepository.findOne({
@@ -77,6 +88,7 @@ export class ProductsService {
     const product = this.productsRepository.create({
       name: dto.name.trim(),
       price: Number(dto.price),
+      discount,
       imageBlob: file!.buffer,
       imageMime: file!.mimetype,
       imageFilename: sanitizeFilename(file!.originalname),
@@ -120,6 +132,13 @@ export class ProductsService {
         throw new BadRequestException('Price must be greater than zero');
       }
       product.price = Number(dto.price);
+    }
+    if (dto.discount !== undefined) {
+      const discount = Number(dto.discount);
+      if (Number.isNaN(discount) || discount < 0 || discount > 100) {
+        throw new BadRequestException('Discount must be between 0 and 100');
+      }
+      product.discount = discount;
     }
     if (file) {
       validateImageFile(file, false);
