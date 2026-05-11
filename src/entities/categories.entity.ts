@@ -7,4 +7,13 @@ export class Category {
 
   @Column()
   name: string;
+
+  @Column({ type: 'bytea' })
+  imageBlob: Buffer;
+
+  @Column()
+  imageMime: string;
+
+  @Column()
+  imageFilename: string;
 }

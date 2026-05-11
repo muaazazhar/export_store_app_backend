@@ -8,9 +8,9 @@ dotenv.config({ path: '.env' });
 dotenv.config({ path: 'src/.env' });
 
 async function seedAdmin() {
-  const email = (process.env.ADMIN_EMAIL ?? 'admin@store.com').trim().toLowerCase();
-  const username = (process.env.ADMIN_USERNAME ?? 'admin').trim().toLowerCase();
-  const password = (process.env.ADMIN_PASSWORD ?? 'admin123').trim();
+  const email = process.env.ADMIN_EMAIL?.trim().toLowerCase();
+  const username = process.env.ADMIN_USERNAME?.trim().toLowerCase();
+  const password = process.env.ADMIN_PASSWORD?.trim();
 
   if (!email || !username || !password) {
     throw new Error('ADMIN_EMAIL, ADMIN_USERNAME and ADMIN_PASSWORD are required');

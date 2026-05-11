@@ -12,6 +12,15 @@ export class Product {
   @Column('decimal')
   price: number;
 
-  @ManyToOne(() => Category, { eager: true })
+  @Column({ type: 'bytea' })
+  imageBlob: Buffer;
+
+  @Column()
+  imageMime: string;
+
+  @Column()
+  imageFilename: string;
+
+  @ManyToOne(() => Category, { eager: true, nullable: false })
   category: Category;
 }

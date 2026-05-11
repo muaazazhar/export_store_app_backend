@@ -1,10 +1,21 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import {
+  sanitizeFilename,
+  validateImageFile,
+} from '../common/upload/image-upload.util';
 import { Category } from '../entities/categories.entity';
 import { Product } from '../entities/product.entity';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
+
+type UploadedFile = {
+  mimetype: string;
+  size: number;
+  originalname: string;
+  buffer: Buffer;
+};
 
 @Injectable()
 export class ProductsService {
@@ -15,20 +26,46 @@ export class ProductsService {
     private readonly categoriesRepository: Repository<Category>,
   ) {}
 
-  findAll(): Promise<Product[]> {
-    return this.productsRepository.find({ order: { id: 'DESC' } });
+  private toProductResponse(product: Product, baseUrl: string) {
+    return {
+      id: product.id,
+      name: product.name,
+      price: Number(product.price),
+      imageUrl: `${baseUrl}/products/${product.id}/image`,
+      category: product.category
+        ? {
+            id: product.category.id,
+            name: product.category.name,
+            imageUrl: `${baseUrl}/categories/${product.category.id}/image`,
+          }
+        : null,
+    };
   }
 
-  async create(dto: CreateProductDto): Promise<Product> {
+  async findAll(baseUrl: string) {
+    const products = await this.productsRepository.find({ order: { id: 'DESC' } });
+    return products.map((product) => this.toProductResponse(product, baseUrl));
+  }
+
+  async findImage(id: number): Promise<Product> {
+    const product = await this.productsRepository.findOne({ where: { id } });
+    if (!product) {
+      throw new NotFoundException('Product not found');
+    }
+    return product;
+  }
+
+  async create(dto: CreateProductDto, file: UploadedFile | undefined, baseUrl: string) {
     if (!dto.name?.trim()) {
       throw new BadRequestException('Product name is required');
     }
     if (!dto.categoryId || dto.categoryId <= 0) {
-      throw new BadRequestException('Valid categoryId is required');
+      throw new BadRequestException('categoryId is required');
     }
     if (dto.price === undefined || Number(dto.price) <= 0) {
       throw new BadRequestException('Price must be greater than zero');
     }
+    validateImageFile(file, true);
 
     const category = await this.categoriesRepository.findOne({
       where: { id: dto.categoryId },
@@ -40,29 +77,36 @@ export class ProductsService {
     const product = this.productsRepository.create({
       name: dto.name.trim(),
       price: Number(dto.price),
+      imageBlob: file!.buffer,
+      imageMime: file!.mimetype,
+      imageFilename: sanitizeFilename(file!.originalname),
       category,
     });
-    return this.productsRepository.save(product);
+    const saved = await this.productsRepository.save(product);
+    return this.toProductResponse(saved, baseUrl);
   }
 
-  async update(id: number, dto: UpdateProductDto): Promise<Product> {
+  async update(
+    id: number,
+    dto: UpdateProductDto,
+    file: UploadedFile | undefined,
+    baseUrl: string,
+  ) {
     const product = await this.productsRepository.findOne({ where: { id } });
     if (!product) {
       throw new NotFoundException('Product not found');
     }
 
-    if (dto.categoryId !== undefined) {
-      if (dto.categoryId <= 0) {
-        throw new BadRequestException('Valid categoryId is required');
-      }
-      const category = await this.categoriesRepository.findOne({
-        where: { id: dto.categoryId },
-      });
-      if (!category) {
-        throw new NotFoundException('Category not found');
-      }
-      product.category = category;
+    if (dto.categoryId === undefined || Number(dto.categoryId) <= 0) {
+      throw new BadRequestException('categoryId is required');
     }
+    const category = await this.categoriesRepository.findOne({
+      where: { id: Number(dto.categoryId) },
+    });
+    if (!category) {
+      throw new NotFoundException('Category not found');
+    }
+    product.category = category;
 
     if (dto.name !== undefined) {
       const nextName = dto.name.trim();
@@ -77,8 +121,15 @@ export class ProductsService {
       }
       product.price = Number(dto.price);
     }
+    if (file) {
+      validateImageFile(file, false);
+      product.imageBlob = file.buffer;
+      product.imageMime = file.mimetype;
+      product.imageFilename = sanitizeFilename(file.originalname);
+    }
 
-    return this.productsRepository.save(product);
+    const saved = await this.productsRepository.save(product);
+    return this.toProductResponse(saved, baseUrl);
   }
 
   async remove(id: number): Promise<{ message: string }> {
