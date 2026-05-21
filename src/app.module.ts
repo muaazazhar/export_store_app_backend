@@ -24,6 +24,10 @@ dotenv.config({ path: 'src/.env' });
       autoLoadEntities: true,
       synchronize: false,
       migrationsRun: false,
+      ssl:
+        process.env.DB_SSLMODE === 'require'
+          ? { rejectUnauthorized: false }
+          : false,
     }),
     UsersModule,
     AuthModule,
