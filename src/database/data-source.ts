@@ -14,5 +14,8 @@ export default new DataSource({
   database: process.env.DB_NAME ?? 'store_db',
   entities: ['src/entities/*.entity.{ts,js}'],
   migrations: [__dirname + '/database/migrations/*.{ts,js}'],
-  ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
+  ssl:
+    process.env.DB_SSLMODE === 'require'
+      ? { rejectUnauthorized: false }
+      : false,
 });
