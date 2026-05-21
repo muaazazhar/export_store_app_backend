@@ -13,6 +13,6 @@ export default new DataSource({
   password: process.env.DB_PASSWORD ?? 'postgres',
   database: process.env.DB_NAME ?? 'store_db',
   entities: ['src/entities/*.entity.{ts,js}'],
-  migrations: ['src/database/migrations/*.{ts,js}'],
+  migrations: [__dirname + '/database/migrations/*.{ts,js}'],
   ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
 });
