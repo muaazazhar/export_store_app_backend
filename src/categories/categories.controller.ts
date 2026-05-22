@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   ParseIntPipe,
@@ -28,7 +29,9 @@ export class CategoriesController {
 
   @Get()
   findAll(@Req() req: Request) {
-    return this.categoriesService.findAll(`${req.protocol}://${req.get('host')}`);
+    return this.categoriesService.findAll(
+      `${req.protocol}://${req.get('host')}`,
+    );
   }
 
   @Get(':id/image')
@@ -48,10 +51,18 @@ export class CategoriesController {
   @Post()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('admin')
-  @UseInterceptors(FileInterceptor('image', { limits: { fileSize: MAX_IMAGE_SIZE_BYTES } }))
+  @UseInterceptors(
+    FileInterceptor('image', { limits: { fileSize: MAX_IMAGE_SIZE_BYTES } }),
+  )
   create(
     @Body() dto: CreateCategoryDto,
-    @UploadedFile() file: { originalname: string; mimetype: string; size: number; buffer: Buffer },
+    @UploadedFile()
+    file: {
+      originalname: string;
+      mimetype: string;
+      size: number;
+      buffer: Buffer;
+    },
     @Req() req: Request,
   ) {
     return this.categoriesService.create(
@@ -64,17 +75,35 @@ export class CategoriesController {
   @Patch(':id')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('admin')
-  @UseInterceptors(FileInterceptor('image', { limits: { fileSize: MAX_IMAGE_SIZE_BYTES } }))
+  @UseInterceptors(
+    FileInterceptor('image', { limits: { fileSize: MAX_IMAGE_SIZE_BYTES } }),
+  )
   update(
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateCategoryDto,
-    @UploadedFile() file: { originalname: string; mimetype: string; size: number; buffer: Buffer },
+    @UploadedFile()
+    file: {
+      originalname: string;
+      mimetype: string;
+      size: number;
+      buffer: Buffer;
+    },
     @Req() req: Request,
   ) {
     return this.categoriesService.update(
       id,
       dto,
       file,
+      `${req.protocol}://${req.get('host')}`,
+    );
+  }
+
+  @Delete(':id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  async remove(@Param('id', ParseIntPipe) id: number, @Req() req: Request) {
+    return this.categoriesService.delete(
+      id,
       `${req.protocol}://${req.get('host')}`,
     );
   }

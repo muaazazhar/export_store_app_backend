@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import {
@@ -38,8 +42,12 @@ export class CategoriesService {
   }
 
   async findAll(baseUrl: string) {
-    const categories = await this.categoriesRepository.find({ order: { name: 'ASC' } });
-    return categories.map((category) => this.toCategoryResponse(category, baseUrl));
+    const categories = await this.categoriesRepository.find({
+      order: { name: 'ASC' },
+    });
+    return categories.map((category) =>
+      this.toCategoryResponse(category, baseUrl),
+    );
   }
 
   async findImage(id: number): Promise<Category> {
@@ -50,14 +58,20 @@ export class CategoriesService {
     return category;
   }
 
-  async create(dto: CreateCategoryDto, file: UploadedFile | undefined, baseUrl: string) {
+  async create(
+    dto: CreateCategoryDto,
+    file: UploadedFile | undefined,
+    baseUrl: string,
+  ) {
     const name = dto.name?.trim();
     if (!name) {
       throw new BadRequestException('Category name is required');
     }
     validateImageFile(file, true);
 
-    const existing = await this.categoriesRepository.findOne({ where: { name } });
+    const existing = await this.categoriesRepository.findOne({
+      where: { name },
+    });
     if (existing) {
       throw new BadRequestException('Category already exists');
     }
@@ -100,5 +114,14 @@ export class CategoriesService {
 
     const saved = await this.categoriesRepository.save(category);
     return this.toCategoryResponse(saved, baseUrl);
+  }
+
+  async delete(id: number, baseUrl: string) {
+    const category = await this.categoriesRepository.findOne({ where: { id } });
+    if (!category) {
+      throw new NotFoundException('Category not found');
+    }
+    await this.categoriesRepository.remove(category);
+    return { message: 'Category deleted', id };
   }
 }
