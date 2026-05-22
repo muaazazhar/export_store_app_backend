@@ -2,6 +2,7 @@ import {
   BadRequestException,
   InternalServerErrorException,
   Injectable,
+  Logger,
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
@@ -13,6 +14,8 @@ import { RegisterDto } from './dto/register.dto';
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private readonly usersService: UsersService,
     private readonly jwtService: JwtService,
@@ -104,9 +107,7 @@ export class AuthService {
       access_type: 'offline',
       prompt: 'consent',
     });
-    console.log(
-      `[Google OAuth][start] client_id=${clientId?.slice(0, 12)}... redirect_uri=${redirectUri}`,
-    );
+    this.logger.debug('Google OAuth start requested');
     return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
   }
 
@@ -229,9 +230,7 @@ export class AuthService {
         'GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and GOOGLE_REDIRECT_URI are required',
       );
     }
-    console.log(
-      `[Google OAuth][exchange] client_id=${clientId.slice(0, 12)}... redirect_uri=${redirectUri} code_prefix=${code.slice(0, 12)}...`,
-    );
+    this.logger.debug('Google OAuth code exchange started');
 
     const body = new URLSearchParams({
       code,
@@ -258,7 +257,10 @@ export class AuthService {
               : ''
           }`
         : `HTTP ${response.status}`;
-      throw new UnauthorizedException(`Google code exchange failed (${reason})`);
+      this.logger.warn(`Google OAuth code exchange failed: ${reason}`);
+      throw new UnauthorizedException(
+        'Google sign-in failed. Please try again.',
+      );
     }
 
     const tokenResult = (await response.json()) as { id_token?: string };

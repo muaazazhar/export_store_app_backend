@@ -1,25 +1,20 @@
+import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import * as dotenv from 'dotenv';
-import type { NextFunction, Request, Response } from 'express';
 import { AppModule } from './app.module';
+import { HttpExceptionFilter } from './common/filters/http-exception.filter';
+import { getNestLogLevels } from './common/logging/log-level.util';
 
 dotenv.config({ path: '.env' });
 dotenv.config({ path: 'src/.env' });
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
-  app.use((req: Request, res: Response, next: NextFunction) => {
-    const startedAt = Date.now();
-
-    res.on('finish', () => {
-      const durationMs = Date.now() - startedAt;
-      console.log(
-        `[HTTP] ${req.method} ${req.originalUrl} -> ${res.statusCode} (${durationMs}ms)`,
-      );
-    });
-
-    next();
+  const app = await NestFactory.create(AppModule, {
+    logger: getNestLogLevels(),
   });
+  const logger = new Logger('Bootstrap');
+
+  app.useGlobalFilters(new HttpExceptionFilter());
 
   const apiPrefix = process.env.API_PREFIX?.trim();
   if (apiPrefix) {
@@ -43,10 +38,8 @@ async function bootstrap() {
   await app.listen(port, host);
   const prefixPath = apiPrefix ? `/${apiPrefix}` : '';
   const displayHost = host === '0.0.0.0' ? 'localhost' : host;
-  console.log(
-    `Store backend is running on http://${displayHost}:${port}${prefixPath}`,
-  );
-  console.log(`Server bind address: ${host}:${port}`);
-  console.log(`CORS allowed origins: ${allowedOrigins.join(', ')}`);
+  logger.log(`Store backend running at http://${displayHost}:${port}${prefixPath}`);
+  logger.log(`Bind address: ${host}:${port}`);
+  logger.debug(`CORS origins: ${allowedOrigins.join(', ')}`);
 }
 bootstrap();

@@ -1,4 +1,5 @@
 import 'reflect-metadata';
+import { Logger } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import * as dotenv from 'dotenv';
 import dataSource from '../data-source';
@@ -6,6 +7,8 @@ import { Users } from '../../entities/users.entity';
 
 dotenv.config({ path: '.env' });
 dotenv.config({ path: 'src/.env' });
+
+const logger = new Logger('AdminSeed');
 
 async function seedAdmin() {
   const email = process.env.ADMIN_EMAIL?.trim().toLowerCase();
@@ -39,11 +42,11 @@ async function seedAdmin() {
   await usersRepository.save(admin);
   await dataSource.destroy();
 
-  console.log(`Admin user ready: email=${email}, username=${username}`);
+  logger.log(`Admin user ready (username=${username})`);
 }
 
 seedAdmin().catch(async (error: unknown) => {
-  console.error('Admin seed failed:', error);
+  logger.error('Admin seed failed', error instanceof Error ? error.stack : undefined);
   if (dataSource.isInitialized) {
     await dataSource.destroy();
   }

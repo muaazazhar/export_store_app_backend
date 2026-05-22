@@ -6,7 +6,7 @@ export const ALLOWED_IMAGE_MIME_TYPES = [
   'image/webp',
 ];
 
-export const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024;
+export const MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024; // 10MB
 
 type UploadedFile = {
   mimetype: string;
@@ -34,6 +34,8 @@ export function validateImageFile(file?: UploadedFile, required = true): void {
   }
 
   if (file.size > MAX_IMAGE_SIZE_BYTES) {
-    throw new BadRequestException('Image size exceeds 5MB limit');
+    throw new BadRequestException(
+      `Image size exceeds ${MAX_IMAGE_SIZE_BYTES / (1024 * 1024)}MB limit. Please upload a file smaller than ${MAX_IMAGE_SIZE_BYTES / (1024 * 1024)}MB.`,
+    );
   }
 }
