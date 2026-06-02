@@ -13,6 +13,9 @@ interface ApiErrorResponse {
   statusCode: number;
   message: string | string[];
   error: string;
+  code?: string;
+  email?: string;
+  resendAvailableInSeconds?: number;
 }
 
 @Catch()
@@ -50,6 +53,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
       statusCode: status,
       message: this.toClientMessage(status, message),
       error: errorLabel,
+      ...this.extractExtraFields(exceptionResponse),
     };
 
     response.status(status).json(body);
@@ -98,6 +102,35 @@ export class HttpExceptionFilter implements ExceptionFilter {
 
   private messageToText(message: string | string[]): string {
     return Array.isArray(message) ? message.join(', ') : message;
+  }
+
+  private extractExtraFields(
+    exceptionResponse: string | object | null,
+  ): Pick<
+    ApiErrorResponse,
+    'code' | 'email' | 'resendAvailableInSeconds'
+  > {
+    if (!exceptionResponse || typeof exceptionResponse !== 'object') {
+      return {};
+    }
+
+    const payload = exceptionResponse as Record<string, unknown>;
+    const extra: Pick<
+      ApiErrorResponse,
+      'code' | 'email' | 'resendAvailableInSeconds'
+    > = {};
+
+    if (typeof payload.code === 'string') {
+      extra.code = payload.code;
+    }
+    if (typeof payload.email === 'string') {
+      extra.email = payload.email;
+    }
+    if (typeof payload.resendAvailableInSeconds === 'number') {
+      extra.resendAvailableInSeconds = payload.resendAvailableInSeconds;
+    }
+
+    return extra;
   }
 
   private getErrorLabel(status: number): string {

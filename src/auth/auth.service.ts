@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   InternalServerErrorException,
   Injectable,
   Logger,
@@ -7,10 +8,22 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
+import { EmailService } from '../common/email/email.service';
+import { Users } from '../entities/users.entity';
 import { UsersService } from '../users/users.service';
+import {
+  generateVerificationCode,
+  getResendCooldownSeconds,
+  getVerificationExpiryDate,
+  hashVerificationCode,
+  isVerificationCodeValid,
+  VERIFICATION_RESEND_SECONDS,
+} from './email-verification.util';
 import { GoogleExchangeDto } from './dto/google-exchange.dto';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
+import { ResendVerificationDto } from './dto/resend-verification.dto';
+import { VerifyEmailDto } from './dto/verify-email.dto';
 
 @Injectable()
 export class AuthService {
@@ -19,6 +32,7 @@ export class AuthService {
   constructor(
     private readonly usersService: UsersService,
     private readonly jwtService: JwtService,
+    private readonly emailService: EmailService,
   ) {}
 
   async register(dto: RegisterDto) {
@@ -49,13 +63,17 @@ export class AuthService {
       username,
       password: hashedPassword,
       role: 'user',
+      isVerified: false,
     });
 
+    await this.issueAndSendVerificationCode(user);
+
     return {
-      id: user.id,
+      requiresVerification: true,
+      message: 'Verification code sent to your email.',
       email: user.email,
-      username: user.username,
-      role: user.role,
+      resendAvailableInSeconds: VERIFICATION_RESEND_SECONDS,
+      user: this.toPublicUser(user),
     };
   }
 
@@ -76,17 +94,132 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
+    if (!user.isVerified) {
+      const resendAvailableInSeconds = getResendCooldownSeconds(user);
+      throw new ForbiddenException({
+        message: 'Please verify your email before signing in.',
+        code: 'EMAIL_NOT_VERIFIED',
+        email: user.email,
+        resendAvailableInSeconds,
+      });
+    }
+
+    return this.buildAuthResponse(user);
+  }
+
+  async verifyEmail(dto: VerifyEmailDto) {
+    const email = dto.email?.trim().toLowerCase();
+    const code = dto.code?.trim();
+    if (!email || !code) {
+      throw new BadRequestException('Email and verification code are required');
+    }
+
+    const user = await this.usersService.findByEmail(email);
+    if (!user) {
+      throw new BadRequestException('Invalid verification request');
+    }
+    if (user.isVerified) {
+      return this.buildAuthResponse(user);
+    }
+
+    if (
+      !user.verificationTokenExpiresAt ||
+      user.verificationTokenExpiresAt.getTime() < Date.now()
+    ) {
+      throw new BadRequestException(
+        'Verification code has expired. Please request a new code.',
+      );
+    }
+
+    const isCodeValid = await isVerificationCodeValid(
+      code,
+      user.verificationTokenHash,
+    );
+    if (!isCodeValid) {
+      throw new BadRequestException('Invalid verification code');
+    }
+
+    const verifiedUser = await this.usersService.markEmailVerified(user);
+    return this.buildAuthResponse(verifiedUser);
+  }
+
+  async resendVerification(dto: ResendVerificationDto) {
+    const email = dto.email?.trim().toLowerCase();
+    if (!email) {
+      throw new BadRequestException('Email is required');
+    }
+
+    const user = await this.usersService.findByEmail(email);
+    if (!user) {
+      return {
+        message: 'If the account exists, a verification code has been sent.',
+        email,
+        resendAvailableInSeconds: VERIFICATION_RESEND_SECONDS,
+      };
+    }
+
+    if (user.isVerified) {
+      throw new BadRequestException('Email is already verified');
+    }
+
+    const cooldownSeconds = getResendCooldownSeconds(user);
+    if (cooldownSeconds > 0) {
+      throw new BadRequestException({
+        message: `Please wait ${cooldownSeconds} seconds before resending.`,
+        code: 'RESEND_COOLDOWN',
+        email: user.email,
+        resendAvailableInSeconds: cooldownSeconds,
+      });
+    }
+
+    await this.issueAndSendVerificationCode(user);
+
+    return {
+      message: 'Verification code sent to your email.',
+      email: user.email,
+      resendAvailableInSeconds: VERIFICATION_RESEND_SECONDS,
+    };
+  }
+
+  private async issueAndSendVerificationCode(user: Users): Promise<void> {
+    const code = generateVerificationCode();
+    const tokenHash = await hashVerificationCode(code);
+    const expiresAt = getVerificationExpiryDate();
+    const sentAt = new Date();
+
+    await this.usersService.setVerificationToken(
+      user,
+      tokenHash,
+      expiresAt,
+      sentAt,
+    );
+
+    try {
+      await this.emailService.sendVerificationEmail(user.email, code);
+    } catch {
+      throw new InternalServerErrorException(
+        'Unable to send verification email. Please try again later.',
+      );
+    }
+  }
+
+  private buildAuthResponse(user: Users) {
     return {
       access_token: this.jwtService.sign({
         userId: user.id,
         role: user.role,
       }),
-      user: {
-        id: user.id,
-        email: user.email,
-        username: user.username,
-        role: user.role,
-      },
+      user: this.toPublicUser(user),
+    };
+  }
+
+  private toPublicUser(user: Users) {
+    return {
+      id: user.id,
+      email: user.email,
+      username: user.username,
+      role: user.role,
+      isVerified: user.isVerified,
     };
   }
 
@@ -154,21 +287,14 @@ export class AuthService {
         username,
         password: generatedPasswordHash,
         role: 'user',
+        isVerified: true,
       });
+    } else if (!user.isVerified) {
+      user.isVerified = true;
+      user = await this.usersService.save(user);
     }
 
-    return {
-      access_token: this.jwtService.sign({
-        userId: user.id,
-        role: user.role,
-      }),
-      user: {
-        id: user.id,
-        email: user.email,
-        username: user.username,
-        role: user.role,
-      },
-    };
+    return this.buildAuthResponse(user);
   }
 
   private normalizeGoogleAuthCode(rawCode?: string): string | undefined {

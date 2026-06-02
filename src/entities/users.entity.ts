@@ -16,4 +16,16 @@ export class Users {
 
   @Column({ default: 'user' }) // 'admin'
   role: string;
+
+  @Column({ default: false })
+  isVerified: boolean;
+
+  @Column({ nullable: true })
+  verificationTokenHash: string | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  verificationTokenExpiresAt: Date | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  verificationSentAt: Date | null;
 }

@@ -31,12 +31,14 @@ async function seedAdmin() {
       username,
       password: hashedPassword,
       role: 'admin',
+      isVerified: true,
     });
   } else {
     admin.email = email;
     admin.username = username;
     admin.password = hashedPassword;
     admin.role = 'admin';
+    admin.isVerified = true;
   }
 
   await usersRepository.save(admin);
