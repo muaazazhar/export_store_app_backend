@@ -1,5 +1,6 @@
 import 'reflect-metadata';
 import * as dotenv from 'dotenv';
+import { join } from 'path';
 import { DataSource } from 'typeorm';
 
 dotenv.config({ path: '.env' });
@@ -13,7 +14,7 @@ export default new DataSource({
   password: process.env.DB_PASSWORD ?? 'postgres',
   database: process.env.DB_NAME ?? 'store_db',
   entities: ['src/entities/*.entity.{ts,js}'],
-  migrations: [__dirname + '/database/migrations/*.{ts,js}'],
+  migrations: [join(__dirname, 'migrations', '*.{ts,js}')],
   ssl:
     process.env.DB_SSLMODE === 'require'
       ? { rejectUnauthorized: false }
