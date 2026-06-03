@@ -58,15 +58,30 @@ export class AuthService {
     }
 
     const hashedPassword = await bcrypt.hash(dto.password, 10);
-    const user = await this.usersService.createUser({
-      email,
-      username,
-      password: hashedPassword,
-      role: 'user',
-      isVerified: false,
-    });
-
-    await this.issueAndSendVerificationCode(user);
+    let user: Users | undefined;
+    try {
+      user = await this.usersService.createUser({
+        email,
+        username,
+        password: hashedPassword,
+        role: 'user',
+        isVerified: false,
+      });
+      await this.issueAndSendVerificationCode(user);
+    } catch (error) {
+      if (user?.id) {
+        await this.usersService.removeById(user.id);
+        this.logger.warn(
+          `Rolled back registration for ${email} because verification email could not be sent`,
+        );
+      }
+      if (error instanceof InternalServerErrorException) {
+        throw error;
+      }
+      throw new InternalServerErrorException(
+        'Unable to complete registration. Please try again later.',
+      );
+    }
 
     return {
       requiresVerification: true,
@@ -95,12 +110,20 @@ export class AuthService {
     }
 
     if (!user.isVerified) {
-      const resendAvailableInSeconds = getResendCooldownSeconds(user);
+      const { resendAvailableInSeconds, verificationEmailSent } =
+        await this.trySendVerificationForUnverifiedUser(user);
+
       throw new ForbiddenException({
-        message: 'Please verify your email before signing in.',
+        message: verificationEmailSent
+          ? 'Please verify your email. A verification code has been sent.'
+          : resendAvailableInSeconds > 0
+            ? `Please verify your email. You can resend a code in ${resendAvailableInSeconds} seconds.`
+            : 'Please verify your email before signing in.',
         code: 'EMAIL_NOT_VERIFIED',
         email: user.email,
         resendAvailableInSeconds,
+        verificationEmailSent,
+        requiresVerification: true,
       });
     }
 
@@ -179,6 +202,36 @@ export class AuthService {
       email: user.email,
       resendAvailableInSeconds: VERIFICATION_RESEND_SECONDS,
     };
+  }
+
+  private async trySendVerificationForUnverifiedUser(user: Users): Promise<{
+    resendAvailableInSeconds: number;
+    verificationEmailSent: boolean;
+  }> {
+    const cooldownSeconds = getResendCooldownSeconds(user);
+    if (cooldownSeconds > 0) {
+      return {
+        resendAvailableInSeconds: cooldownSeconds,
+        verificationEmailSent: false,
+      };
+    }
+
+    try {
+      await this.issueAndSendVerificationCode(user);
+      return {
+        resendAvailableInSeconds: VERIFICATION_RESEND_SECONDS,
+        verificationEmailSent: true,
+      };
+    } catch (error) {
+      this.logger.warn(
+        `Could not send verification email on login for ${user.email}`,
+        error instanceof Error ? error.message : undefined,
+      );
+      return {
+        resendAvailableInSeconds: 0,
+        verificationEmailSent: false,
+      };
+    }
   }
 
   private async issueAndSendVerificationCode(user: Users): Promise<void> {

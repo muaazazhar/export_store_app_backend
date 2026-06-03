@@ -70,4 +70,8 @@ export class UsersService {
     user.verificationTokenExpiresAt = null;
     return this.usersRepository.save(user);
   }
+
+  async removeById(id: number): Promise<void> {
+    await this.usersRepository.delete({ id });
+  }
 }

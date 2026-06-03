@@ -16,6 +16,8 @@ interface ApiErrorResponse {
   code?: string;
   email?: string;
   resendAvailableInSeconds?: number;
+  verificationEmailSent?: boolean;
+  requiresVerification?: boolean;
 }
 
 @Catch()
@@ -108,7 +110,11 @@ export class HttpExceptionFilter implements ExceptionFilter {
     exceptionResponse: string | object | null,
   ): Pick<
     ApiErrorResponse,
-    'code' | 'email' | 'resendAvailableInSeconds'
+    | 'code'
+    | 'email'
+    | 'resendAvailableInSeconds'
+    | 'verificationEmailSent'
+    | 'requiresVerification'
   > {
     if (!exceptionResponse || typeof exceptionResponse !== 'object') {
       return {};
@@ -117,7 +123,11 @@ export class HttpExceptionFilter implements ExceptionFilter {
     const payload = exceptionResponse as Record<string, unknown>;
     const extra: Pick<
       ApiErrorResponse,
-      'code' | 'email' | 'resendAvailableInSeconds'
+      | 'code'
+      | 'email'
+      | 'resendAvailableInSeconds'
+      | 'verificationEmailSent'
+      | 'requiresVerification'
     > = {};
 
     if (typeof payload.code === 'string') {
@@ -128,6 +138,12 @@ export class HttpExceptionFilter implements ExceptionFilter {
     }
     if (typeof payload.resendAvailableInSeconds === 'number') {
       extra.resendAvailableInSeconds = payload.resendAvailableInSeconds;
+    }
+    if (typeof payload.verificationEmailSent === 'boolean') {
+      extra.verificationEmailSent = payload.verificationEmailSent;
+    }
+    if (typeof payload.requiresVerification === 'boolean') {
+      extra.requiresVerification = payload.requiresVerification;
     }
 
     return extra;
