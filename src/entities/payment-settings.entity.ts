@@ -31,6 +31,12 @@ export class PaymentSettings {
   @Column({ type: 'varchar', nullable: true })
   jazzcashNumber: string | null;
 
+  @Column({ default: false })
+  freeDeliveryEnabled: boolean;
+
+  @Column('decimal', { precision: 12, scale: 2, default: 0 })
+  deliveryCharge: number;
+
   @UpdateDateColumn({ type: 'timestamptz' })
   updatedAt: Date;
 }

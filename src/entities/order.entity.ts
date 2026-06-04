@@ -30,8 +30,29 @@ export class Order {
   @Column()
   paymentMethod: string;
 
+  @Column({ type: 'varchar', length: 32, nullable: true })
+  walletProvider: string | null;
+
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  paymentReference: string | null;
+
+  @Column({ type: 'bytea', nullable: true, select: false })
+  paymentScreenshotBlob: Buffer | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  paymentScreenshotMime: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  paymentScreenshotFilename: string | null;
+
   @Column({ unique: true })
   receiptNumber: string;
+
+  @Column('decimal', { precision: 12, scale: 2, default: 0 })
+  subtotalAmount: number;
+
+  @Column('decimal', { precision: 12, scale: 2, default: 0 })
+  deliveryCharge: number;
 
   @Column('decimal', { precision: 12, scale: 2, default: 0 })
   totalAmount: number;

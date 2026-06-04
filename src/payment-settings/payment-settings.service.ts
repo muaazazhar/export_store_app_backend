@@ -24,7 +24,16 @@ export class PaymentSettingsService {
       instructions: settings.instructions,
       easypaisaNumber: settings.easypaisaNumber,
       jazzcashNumber: settings.jazzcashNumber,
+      freeDeliveryEnabled: settings.freeDeliveryEnabled,
+      deliveryCharge: Number(settings.deliveryCharge ?? 0),
     };
+  }
+
+  computeDeliveryCharge(settings: PaymentSettings): number {
+    if (settings.freeDeliveryEnabled) {
+      return 0;
+    }
+    return Number(settings.deliveryCharge ?? 0);
   }
 
   isBankTransferConfigured(settings: PaymentSettings): boolean {
@@ -66,6 +75,21 @@ export class PaymentSettingsService {
       return trimmed || null;
     };
 
+    const pickBoolean = (value: boolean | undefined): boolean | undefined => {
+      if (value === undefined) {
+        return undefined;
+      }
+      return Boolean(value);
+    };
+
+    const pickNumber = (value: number | undefined): number | undefined => {
+      if (value === undefined) {
+        return undefined;
+      }
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : undefined;
+    };
+
     return {
       bankName: pickString(dto.bankName),
       accountTitle: pickString(dto.accountTitle ?? dto.account_title),
@@ -76,6 +100,10 @@ export class PaymentSettingsService {
         dto.easypaisaNumber ?? dto.easypaisa_number,
       ),
       jazzcashNumber: pickNullable(dto.jazzcashNumber ?? dto.jazzcash_number),
+      freeDeliveryEnabled: pickBoolean(
+        dto.freeDeliveryEnabled ?? dto.free_delivery_enabled,
+      ),
+      deliveryCharge: pickNumber(dto.deliveryCharge ?? dto.delivery_charge),
     };
   }
 
@@ -93,6 +121,8 @@ export class PaymentSettingsService {
       instructions: null,
       easypaisaNumber: null,
       jazzcashNumber: null,
+      freeDeliveryEnabled: false,
+      deliveryCharge: 0,
     });
     return this.settingsRepository.save(created);
   }
@@ -105,21 +135,41 @@ export class PaymentSettingsService {
   assertPaymentMethodAllowed(
     settings: PaymentSettings,
     paymentMethod: string,
+    walletProvider: string | null,
   ): void {
     if (paymentMethod === 'bank_transfer' && !this.isBankTransferConfigured(settings)) {
       throw new BadRequestException('Bank transfer is not available');
     }
-    if (paymentMethod === 'easypaisa' && !this.isEasypaisaConfigured(settings)) {
-      throw new BadRequestException('Easypaisa is not available');
+
+    if (paymentMethod === 'wallet') {
+      if (!walletProvider) {
+        throw new BadRequestException('walletProvider is required for wallet payments');
+      }
+      if (walletProvider === 'easypaisa' && !this.isEasypaisaConfigured(settings)) {
+        throw new BadRequestException('Easypaisa is not available');
+      }
+      if (walletProvider === 'jazzcash' && !this.isJazzcashConfigured(settings)) {
+        throw new BadRequestException('JazzCash is not available');
+      }
+      if (!['easypaisa', 'jazzcash'].includes(walletProvider)) {
+        throw new BadRequestException(
+          'walletProvider must be easypaisa or jazzcash',
+        );
+      }
     }
-    if (paymentMethod === 'jazzcash' && !this.isJazzcashConfigured(settings)) {
-      throw new BadRequestException('JazzCash is not available');
+  }
+
+  private validateDeliverySettings(values: PaymentSettingsResponse): void {
+    if (!values.freeDeliveryEnabled && values.deliveryCharge <= 0) {
+      throw new BadRequestException(
+        'deliveryCharge must be greater than zero when free delivery is disabled',
+      );
     }
   }
 
   private normalizeForPut(dto: PaymentSettingsInput): PaymentSettingsResponse {
     const partial = this.normalizeInput(dto);
-    return {
+    const values: PaymentSettingsResponse = {
       bankName: partial.bankName ?? '',
       accountTitle: partial.accountTitle ?? '',
       accountNumber: partial.accountNumber ?? '',
@@ -127,7 +177,11 @@ export class PaymentSettingsService {
       instructions: partial.instructions ?? null,
       easypaisaNumber: partial.easypaisaNumber ?? null,
       jazzcashNumber: partial.jazzcashNumber ?? null,
+      freeDeliveryEnabled: partial.freeDeliveryEnabled ?? false,
+      deliveryCharge: partial.deliveryCharge ?? 0,
     };
+    this.validateDeliverySettings(values);
+    return values;
   }
 
   async updateSettings(
@@ -143,6 +197,8 @@ export class PaymentSettingsService {
     settings.instructions = values.instructions;
     settings.easypaisaNumber = values.easypaisaNumber;
     settings.jazzcashNumber = values.jazzcashNumber;
+    settings.freeDeliveryEnabled = values.freeDeliveryEnabled;
+    settings.deliveryCharge = values.deliveryCharge;
 
     const saved = await this.settingsRepository.save(settings);
     return this.toResponse(saved);

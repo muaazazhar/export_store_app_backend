@@ -6,13 +6,19 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Req,
+  Res,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import type { Request, Response } from 'express';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
-import { CreateOrderDto } from './dto/create-order.dto';
+import { MAX_PAYMENT_SCREENSHOT_BYTES } from '../common/upload/order-payment-upload.util';
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
 import { OrdersService } from './orders.service';
 
@@ -21,32 +27,79 @@ import { OrdersService } from './orders.service';
 export class OrdersController {
   constructor(private readonly ordersService: OrdersService) {}
 
+  private requestBaseUrl(req: Request): string {
+    return `${req.protocol}://${req.get('host')}`;
+  }
+
   @Post()
+  @UseInterceptors(
+    FileInterceptor('paymentScreenshot', {
+      limits: { fileSize: MAX_PAYMENT_SCREENSHOT_BYTES },
+    }),
+  )
   create(
     @CurrentUser() user: { userId: string },
-    @Body() dto: CreateOrderDto,
+    @Body() body: Record<string, unknown>,
+    @UploadedFile()
+    paymentScreenshot:
+      | { originalname: string; mimetype: string; size: number; buffer: Buffer }
+      | undefined,
+    @Req() req: Request,
   ) {
-    return this.ordersService.create(user.userId, dto);
+    return this.ordersService.create(
+      user.userId,
+      body,
+      paymentScreenshot,
+      this.requestBaseUrl(req),
+    );
   }
 
   @Get('my')
-  findMine(@CurrentUser() user: { userId: string }) {
-    return this.ordersService.findMine(user.userId);
+  findMine(@CurrentUser() user: { userId: string }, @Req() req: Request) {
+    return this.ordersService.findMine(
+      user.userId,
+      this.requestBaseUrl(req),
+    );
+  }
+
+  @Get(':id/payment-screenshot')
+  async getPaymentScreenshot(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: { userId: string; role: string },
+    @Res() res: Response,
+  ): Promise<void> {
+    const file = await this.ordersService.getPaymentScreenshot(
+      id,
+      user.userId,
+      user.role,
+    );
+    res.setHeader('Content-Type', file.mime);
+    res.setHeader(
+      'Content-Disposition',
+      `inline; filename="${file.filename}"`,
+    );
+    res.send(file.buffer);
   }
 
   @Get(':id/receipt')
   getReceipt(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: { userId: string; role: string },
+    @Req() req: Request,
   ) {
-    return this.ordersService.getReceipt(id, user.userId, user.role);
+    return this.ordersService.getReceipt(
+      id,
+      user.userId,
+      user.role,
+      this.requestBaseUrl(req),
+    );
   }
 
   @Get()
   @UseGuards(RolesGuard)
   @Roles('admin')
-  findAll() {
-    return this.ordersService.findAll();
+  findAll(@Req() req: Request) {
+    return this.ordersService.findAll(this.requestBaseUrl(req));
   }
 
   @Patch(':id')
@@ -55,7 +108,12 @@ export class OrdersController {
   updateStatus(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateOrderStatusDto,
+    @Req() req: Request,
   ) {
-    return this.ordersService.updateOrder(id, dto);
+    return this.ordersService.updateOrder(
+      id,
+      dto,
+      this.requestBaseUrl(req),
+    );
   }
 }
