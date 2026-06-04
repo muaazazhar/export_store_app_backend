@@ -4,7 +4,7 @@ import {
   Delete,
   Get,
   Param,
-  ParseIntPipe,
+  ParseUUIDPipe,
   Patch,
   Post,
   Req,
@@ -36,7 +36,7 @@ export class CategoriesController {
 
   @Get(':id/image')
   async getImage(
-    @Param('id', ParseIntPipe) id: number,
+    @Param('id', ParseUUIDPipe) id: string,
     @Res() res: Response,
   ): Promise<void> {
     const category = await this.categoriesService.findImage(id);
@@ -79,7 +79,7 @@ export class CategoriesController {
     FileInterceptor('image', { limits: { fileSize: MAX_IMAGE_SIZE_BYTES } }),
   )
   update(
-    @Param('id', ParseIntPipe) id: number,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateCategoryDto,
     @UploadedFile()
     file: {
@@ -101,7 +101,7 @@ export class CategoriesController {
   @Delete(':id')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('admin')
-  async remove(@Param('id', ParseIntPipe) id: number, @Req() req: Request) {
+  async remove(@Param('id', ParseUUIDPipe) id: string, @Req() req: Request) {
     return this.categoriesService.delete(
       id,
       `${req.protocol}://${req.get('host')}`,

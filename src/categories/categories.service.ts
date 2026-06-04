@@ -50,7 +50,7 @@ export class CategoriesService {
     );
   }
 
-  async findImage(id: number): Promise<Category> {
+  async findImage(id: string): Promise<Category> {
     const category = await this.categoriesRepository.findOne({ where: { id } });
     if (!category) {
       throw new NotFoundException('Category not found');
@@ -87,7 +87,7 @@ export class CategoriesService {
   }
 
   async update(
-    id: number,
+    id: string,
     dto: UpdateCategoryDto,
     file: UploadedFile | undefined,
     baseUrl: string,
@@ -116,7 +116,7 @@ export class CategoriesService {
     return this.toCategoryResponse(saved, baseUrl);
   }
 
-  async delete(id: number, baseUrl: string) {
+  async delete(id: string, baseUrl: string) {
     const category = await this.categoriesRepository.findOne({ where: { id } });
     if (!category) {
       throw new NotFoundException('Category not found');

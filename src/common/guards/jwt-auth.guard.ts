@@ -10,7 +10,7 @@ import { UsersService } from '../../users/users.service';
 interface RequestWithHeaders {
   headers: Record<string, string | undefined>;
   user?: {
-    userId: number;
+    userId: string;
     role: string;
     email: string;
   };
@@ -38,7 +38,7 @@ export class JwtAuthGuard implements CanActivate {
 
     try {
       const payload = await this.jwtService.verifyAsync<{
-        userId: number;
+        userId: string;
         role: string;
       }>(token);
 

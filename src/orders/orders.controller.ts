@@ -3,7 +3,7 @@ import {
   Controller,
   Get,
   Param,
-  ParseIntPipe,
+  ParseUUIDPipe,
   Patch,
   Post,
   UseGuards,
@@ -23,21 +23,21 @@ export class OrdersController {
 
   @Post()
   create(
-    @CurrentUser() user: { userId: number },
+    @CurrentUser() user: { userId: string },
     @Body() dto: CreateOrderDto,
   ) {
     return this.ordersService.create(user.userId, dto);
   }
 
   @Get('my')
-  findMine(@CurrentUser() user: { userId: number }) {
+  findMine(@CurrentUser() user: { userId: string }) {
     return this.ordersService.findMine(user.userId);
   }
 
   @Get(':id/receipt')
   getReceipt(
-    @Param('id', ParseIntPipe) id: number,
-    @CurrentUser() user: { userId: number; role: string },
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: { userId: string; role: string },
   ) {
     return this.ordersService.getReceipt(id, user.userId, user.role);
   }
@@ -53,9 +53,9 @@ export class OrdersController {
   @UseGuards(RolesGuard)
   @Roles('admin')
   updateStatus(
-    @Param('id', ParseIntPipe) id: number,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateOrderStatusDto,
   ) {
-    return this.ordersService.updateStatus(id, dto.status);
+    return this.ordersService.updateOrder(id, dto);
   }
 }

@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { isValidUuid } from '../common/validation/uuid.util';
 import {
   sanitizeFilename,
   validateImageFile,
@@ -50,11 +51,11 @@ export class ProductsService {
   }
 
   async findAll(baseUrl: string) {
-    const products = await this.productsRepository.find({ order: { id: 'DESC' } });
+    const products = await this.productsRepository.find({ order: { name: 'ASC' } });
     return products.map((product) => this.toProductResponse(product, baseUrl));
   }
 
-  async findImage(id: number): Promise<Product> {
+  async findImage(id: string): Promise<Product> {
     const product = await this.productsRepository.findOne({ where: { id } });
     if (!product) {
       throw new NotFoundException('Product not found');
@@ -66,8 +67,8 @@ export class ProductsService {
     if (!dto.name?.trim()) {
       throw new BadRequestException('Product name is required');
     }
-    if (!dto.categoryId || dto.categoryId <= 0) {
-      throw new BadRequestException('categoryId is required');
+    if (!dto.categoryId || !isValidUuid(dto.categoryId)) {
+      throw new BadRequestException('A valid categoryId is required');
     }
     if (dto.price === undefined || Number(dto.price) <= 0) {
       throw new BadRequestException('Price must be greater than zero');
@@ -99,7 +100,7 @@ export class ProductsService {
   }
 
   async update(
-    id: number,
+    id: string,
     dto: UpdateProductDto,
     file: UploadedFile | undefined,
     baseUrl: string,
@@ -109,11 +110,11 @@ export class ProductsService {
       throw new NotFoundException('Product not found');
     }
 
-    if (dto.categoryId === undefined || Number(dto.categoryId) <= 0) {
-      throw new BadRequestException('categoryId is required');
+    if (!dto.categoryId || !isValidUuid(dto.categoryId)) {
+      throw new BadRequestException('A valid categoryId is required');
     }
     const category = await this.categoriesRepository.findOne({
-      where: { id: Number(dto.categoryId) },
+      where: { id: dto.categoryId },
     });
     if (!category) {
       throw new NotFoundException('Category not found');
@@ -151,7 +152,7 @@ export class ProductsService {
     return this.toProductResponse(saved, baseUrl);
   }
 
-  async remove(id: number): Promise<{ message: string }> {
+  async remove(id: string): Promise<{ message: string }> {
     const product = await this.productsRepository.findOne({ where: { id } });
     if (!product) {
       throw new NotFoundException('Product not found');

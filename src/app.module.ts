@@ -8,6 +8,7 @@ import { AuthModule } from './auth/auth.module';
 import { CategoriesModule } from './categories/categories.module';
 import { HttpLoggingInterceptor } from './common/interceptors/http-logging.interceptor';
 import { OrdersModule } from './orders/orders.module';
+import { PaymentSettingsModule } from './payment-settings/payment-settings.module';
 import { ProductsModule } from './products/products.module';
 import { UsersModule } from './users/users.module';
 
@@ -36,6 +37,7 @@ dotenv.config({ path: 'src/.env' });
     CategoriesModule,
     ProductsModule,
     OrdersModule,
+    PaymentSettingsModule,
   ],
   controllers: [AppController],
   providers: [

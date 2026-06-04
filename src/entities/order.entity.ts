@@ -2,6 +2,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  JoinColumn,
   ManyToOne,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
@@ -10,10 +11,14 @@ import { Users } from './users.entity';
 
 @Entity()
 export class Order {
-  @PrimaryGeneratedColumn()
-  id: number;
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Column({ type: 'int', unique: true })
+  orderNo: number;
 
   @ManyToOne(() => Users)
+  @JoinColumn({ name: 'userId' })
   user: Users;
 
   @Column()
@@ -33,6 +38,9 @@ export class Order {
 
   @Column({ default: 'pending' })
   status: string;
+
+  @Column({ name: 'cancellation_reason', type: 'varchar', nullable: true })
+  cancellationReason: string | null;
 
   @CreateDateColumn()
   createdAt: Date;

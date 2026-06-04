@@ -4,7 +4,7 @@ import {
   Delete,
   Get,
   Param,
-  ParseIntPipe,
+  ParseUUIDPipe,
   Patch,
   Post,
   Req,
@@ -34,7 +34,7 @@ export class ProductsController {
 
   @Get(':id/image')
   async getImage(
-    @Param('id', ParseIntPipe) id: number,
+    @Param('id', ParseUUIDPipe) id: string,
     @Res() res: Response,
   ): Promise<void> {
     const product = await this.productsService.findImage(id);
@@ -67,7 +67,7 @@ export class ProductsController {
   @Roles('admin')
   @UseInterceptors(FileInterceptor('image', { limits: { fileSize: MAX_IMAGE_SIZE_BYTES } }))
   update(
-    @Param('id', ParseIntPipe) id: number,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateProductDto,
     @UploadedFile() file: { originalname: string; mimetype: string; size: number; buffer: Buffer },
     @Req() req: Request,
@@ -83,7 +83,7 @@ export class ProductsController {
   @Delete(':id')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('admin')
-  remove(@Param('id', ParseIntPipe) id: number) {
+  remove(@Param('id', ParseUUIDPipe) id: string) {
     return this.productsService.remove(id);
   }
 }

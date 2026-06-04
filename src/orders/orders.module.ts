@@ -6,6 +6,7 @@ import { Product } from '../entities/product.entity';
 import { Users } from '../entities/users.entity';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
+import { PaymentSettingsModule } from '../payment-settings/payment-settings.module';
 import { UsersModule } from '../users/users.module';
 import { OrdersController } from './orders.controller';
 import { OrdersService } from './orders.service';
@@ -15,6 +16,7 @@ import { OrdersService } from './orders.service';
     TypeOrmModule.forFeature([Order, Users, Product]),
     AuthModule,
     UsersModule,
+    PaymentSettingsModule,
   ],
   controllers: [OrdersController],
   providers: [OrdersService, JwtAuthGuard, RolesGuard],
