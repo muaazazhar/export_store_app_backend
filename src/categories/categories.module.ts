@@ -1,17 +1,18 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { AuthModule } from '../auth/auth.module';
 import { Category } from '../entities/categories.entity';
-import { UsersModule } from '../users/users.module';
+import { Product } from '../entities/product.entity';
+import { ProductsModule } from '../products/products.module';
 import { CategoriesController } from './categories.controller';
 import { CategoriesService } from './categories.service';
-import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
-import { RolesGuard } from '../common/guards/roles.guard';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Category]), AuthModule, UsersModule],
+  imports: [
+    TypeOrmModule.forFeature([Category, Product]),
+    ProductsModule,
+  ],
   controllers: [CategoriesController],
-  providers: [CategoriesService, JwtAuthGuard, RolesGuard],
+  providers: [CategoriesService],
   exports: [CategoriesService],
 })
 export class CategoriesModule {}

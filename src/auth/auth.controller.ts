@@ -1,4 +1,6 @@
-import { Body, Controller, Get, Post, Query, Redirect } from '@nestjs/common';
+import { Body, Controller, Get, Post, Query, Redirect, UseGuards } from '@nestjs/common';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { AuthService } from './auth.service';
 import { GoogleExchangeDto } from './dto/google-exchange.dto';
 import { LoginDto } from './dto/login.dto';
@@ -9,6 +11,12 @@ import { VerifyEmailDto } from './dto/verify-email.dto';
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
+
+  @Get('me')
+  @UseGuards(JwtAuthGuard)
+  getMe(@CurrentUser() user: { userId: string }) {
+    return this.authService.getMe(user.userId);
+  }
 
   @Post('register')
   register(@Body() dto: RegisterDto) {

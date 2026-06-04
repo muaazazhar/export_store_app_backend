@@ -1,7 +1,18 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { PaymentSettings } from '../entities/payment-settings.entity';
+import {
+  pickBoolean,
+  pickFiniteNumber,
+  pickNullableString,
+  pickTrimmedString,
+} from '../common/dto/field-normalize.util';
+import { isValidUuid } from '../common/validation/uuid.util';
+import {
+  PaymentSettings,
+  POPULAR_CRITERIA_VALUES,
+  PopularCriteria,
+} from '../entities/payment-settings.entity';
 import { UpdatePaymentSettingsDto } from './dto/update-payment-settings.dto';
 import {
   PaymentSettingsInput,
@@ -26,7 +37,14 @@ export class PaymentSettingsService {
       jazzcashNumber: settings.jazzcashNumber,
       freeDeliveryEnabled: settings.freeDeliveryEnabled,
       deliveryCharge: Number(settings.deliveryCharge ?? 0),
+      popularProductLimit: settings.popularProductLimit,
+      popularCriteria: settings.popularCriteria,
+      featuredProductIds: settings.featuredProductIds ?? [],
     };
+  }
+
+  getPopularProductLimit(settings: PaymentSettings): number {
+    return Math.min(50, Math.max(1, Number(settings.popularProductLimit ?? 12)));
   }
 
   computeDeliveryCharge(settings: PaymentSettings): number {
@@ -55,55 +73,59 @@ export class PaymentSettingsService {
   private normalizeInput(
     dto: PaymentSettingsInput,
   ): Partial<PaymentSettingsResponse> {
-    const pickString = (value: string | undefined): string | undefined => {
+    const pickCriteria = (
+      value: string | undefined,
+    ): PopularCriteria | undefined => {
       if (value === undefined) {
         return undefined;
       }
-      return value.trim();
+      const normalized = value.trim() as PopularCriteria;
+      return POPULAR_CRITERIA_VALUES.includes(normalized)
+        ? normalized
+        : undefined;
     };
 
-    const pickNullable = (
-      value: string | null | undefined,
-    ): string | null | undefined => {
+    const pickFeaturedIds = (
+      value: string[] | undefined,
+    ): string[] | undefined => {
       if (value === undefined) {
         return undefined;
       }
-      if (value === null) {
-        return null;
+      if (!Array.isArray(value)) {
+        return [];
       }
-      const trimmed = value.trim();
-      return trimmed || null;
-    };
-
-    const pickBoolean = (value: boolean | undefined): boolean | undefined => {
-      if (value === undefined) {
-        return undefined;
-      }
-      return Boolean(value);
-    };
-
-    const pickNumber = (value: number | undefined): number | undefined => {
-      if (value === undefined) {
-        return undefined;
-      }
-      const parsed = Number(value);
-      return Number.isFinite(parsed) ? parsed : undefined;
+      return value
+        .map((id) => String(id).trim())
+        .filter((id) => isValidUuid(id));
     };
 
     return {
-      bankName: pickString(dto.bankName),
-      accountTitle: pickString(dto.accountTitle ?? dto.account_title),
-      accountNumber: pickString(dto.accountNumber ?? dto.account_number),
-      iban: pickNullable(dto.iban),
-      instructions: pickNullable(dto.instructions),
-      easypaisaNumber: pickNullable(
+      bankName: pickTrimmedString(dto.bankName),
+      accountTitle: pickTrimmedString(dto.accountTitle ?? dto.account_title),
+      accountNumber: pickTrimmedString(dto.accountNumber ?? dto.account_number),
+      iban: pickNullableString(dto.iban),
+      instructions: pickNullableString(dto.instructions),
+      easypaisaNumber: pickNullableString(
         dto.easypaisaNumber ?? dto.easypaisa_number,
       ),
-      jazzcashNumber: pickNullable(dto.jazzcashNumber ?? dto.jazzcash_number),
+      jazzcashNumber: pickNullableString(
+        dto.jazzcashNumber ?? dto.jazzcash_number,
+      ),
       freeDeliveryEnabled: pickBoolean(
         dto.freeDeliveryEnabled ?? dto.free_delivery_enabled,
       ),
-      deliveryCharge: pickNumber(dto.deliveryCharge ?? dto.delivery_charge),
+      deliveryCharge: pickFiniteNumber(
+        dto.deliveryCharge ?? dto.delivery_charge,
+      ),
+      popularProductLimit: pickFiniteNumber(
+        dto.popularProductLimit ?? dto.popular_product_limit,
+      ),
+      popularCriteria: pickCriteria(
+        (dto.popularCriteria ?? dto.popular_criteria) as string | undefined,
+      ),
+      featuredProductIds: pickFeaturedIds(
+        dto.featuredProductIds ?? dto.featured_product_ids,
+      ),
     };
   }
 
@@ -113,23 +135,26 @@ export class PaymentSettingsService {
       return rows[0];
     }
 
-    const created = this.settingsRepository.create({
-      bankName: '',
-      accountTitle: '',
-      accountNumber: '',
-      iban: null,
-      instructions: null,
-      easypaisaNumber: null,
-      jazzcashNumber: null,
-      freeDeliveryEnabled: false,
-      deliveryCharge: 0,
-    });
-    return this.settingsRepository.save(created);
+    return this.settingsRepository.save(
+      this.settingsRepository.create({
+        bankName: '',
+        accountTitle: '',
+        accountNumber: '',
+        iban: null,
+        instructions: null,
+        easypaisaNumber: null,
+        jazzcashNumber: null,
+        freeDeliveryEnabled: false,
+        deliveryCharge: 0,
+        popularProductLimit: 12,
+        popularCriteria: 'most_ordered',
+        featuredProductIds: [],
+      }),
+    );
   }
 
   async getSettings(): Promise<PaymentSettingsResponse> {
-    const settings = await this.getOrCreate();
-    return this.toResponse(settings);
+    return this.toResponse(await this.getOrCreate());
   }
 
   assertPaymentMethodAllowed(
@@ -159,10 +184,22 @@ export class PaymentSettingsService {
     }
   }
 
-  private validateDeliverySettings(values: PaymentSettingsResponse): void {
+  private validateSettings(values: PaymentSettingsResponse): void {
     if (!values.freeDeliveryEnabled && values.deliveryCharge <= 0) {
       throw new BadRequestException(
         'deliveryCharge must be greater than zero when free delivery is disabled',
+      );
+    }
+
+    if (values.popularProductLimit < 1 || values.popularProductLimit > 50) {
+      throw new BadRequestException(
+        'popularProductLimit must be between 1 and 50',
+      );
+    }
+
+    if (!POPULAR_CRITERIA_VALUES.includes(values.popularCriteria)) {
+      throw new BadRequestException(
+        `popularCriteria must be one of: ${POPULAR_CRITERIA_VALUES.join(', ')}`,
       );
     }
   }
@@ -179,8 +216,15 @@ export class PaymentSettingsService {
       jazzcashNumber: partial.jazzcashNumber ?? null,
       freeDeliveryEnabled: partial.freeDeliveryEnabled ?? false,
       deliveryCharge: partial.deliveryCharge ?? 0,
+      popularProductLimit: partial.popularProductLimit ?? 12,
+      popularCriteria: partial.popularCriteria ?? 'most_ordered',
+      featuredProductIds: partial.featuredProductIds ?? [],
     };
-    this.validateDeliverySettings(values);
+    values.popularProductLimit = Math.min(
+      50,
+      Math.max(1, values.popularProductLimit),
+    );
+    this.validateSettings(values);
     return values;
   }
 
@@ -190,17 +234,7 @@ export class PaymentSettingsService {
     const settings = await this.getOrCreate();
     const values = this.normalizeForPut(dto);
 
-    settings.bankName = values.bankName;
-    settings.accountTitle = values.accountTitle;
-    settings.accountNumber = values.accountNumber;
-    settings.iban = values.iban;
-    settings.instructions = values.instructions;
-    settings.easypaisaNumber = values.easypaisaNumber;
-    settings.jazzcashNumber = values.jazzcashNumber;
-    settings.freeDeliveryEnabled = values.freeDeliveryEnabled;
-    settings.deliveryCharge = values.deliveryCharge;
-
-    const saved = await this.settingsRepository.save(settings);
-    return this.toResponse(saved);
+    Object.assign(settings, values);
+    return this.toResponse(await this.settingsRepository.save(settings));
   }
 }

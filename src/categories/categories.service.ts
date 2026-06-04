@@ -5,20 +5,15 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { toCategoryResponse } from '../common/catalog/catalog-response.util';
 import {
   sanitizeFilename,
   validateImageFile,
 } from '../common/upload/image-upload.util';
+import { UploadedImageFile } from '../common/upload/uploaded-file.type';
 import { Category } from '../entities/categories.entity';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
-
-type UploadedFile = {
-  mimetype: string;
-  size: number;
-  originalname: string;
-  buffer: Buffer;
-};
 
 @Injectable()
 export class CategoriesService {
@@ -27,31 +22,19 @@ export class CategoriesService {
     private readonly categoriesRepository: Repository<Category>,
   ) {}
 
-  private buildApiBaseUrl(baseUrl: string): string {
-    const apiPrefix = process.env.API_PREFIX?.trim();
-    return apiPrefix ? `${baseUrl}/${apiPrefix}` : baseUrl;
-  }
-
-  private toCategoryResponse(category: Category, baseUrl: string) {
-    const apiBaseUrl = this.buildApiBaseUrl(baseUrl);
-    return {
-      id: category.id,
-      name: category.name,
-      imageUrl: `${apiBaseUrl}/categories/${category.id}/image`,
-    };
-  }
-
   async findAll(baseUrl: string) {
     const categories = await this.categoriesRepository.find({
       order: { name: 'ASC' },
     });
-    return categories.map((category) =>
-      this.toCategoryResponse(category, baseUrl),
-    );
+    return categories.map((category) => toCategoryResponse(category, baseUrl));
   }
 
   async findImage(id: string): Promise<Category> {
-    const category = await this.categoriesRepository.findOne({ where: { id } });
+    const category = await this.categoriesRepository
+      .createQueryBuilder('category')
+      .addSelect('category.imageBlob')
+      .where('category.id = :id', { id })
+      .getOne();
     if (!category) {
       throw new NotFoundException('Category not found');
     }
@@ -60,7 +43,7 @@ export class CategoriesService {
 
   async create(
     dto: CreateCategoryDto,
-    file: UploadedFile | undefined,
+    file: UploadedImageFile | undefined,
     baseUrl: string,
   ) {
     const name = dto.name?.trim();
@@ -76,20 +59,21 @@ export class CategoriesService {
       throw new BadRequestException('Category already exists');
     }
 
-    const category = this.categoriesRepository.create({
-      name,
-      imageBlob: file!.buffer,
-      imageMime: file!.mimetype,
-      imageFilename: sanitizeFilename(file!.originalname),
-    });
-    const saved = await this.categoriesRepository.save(category);
-    return this.toCategoryResponse(saved, baseUrl);
+    const saved = await this.categoriesRepository.save(
+      this.categoriesRepository.create({
+        name,
+        imageBlob: file!.buffer,
+        imageMime: file!.mimetype,
+        imageFilename: sanitizeFilename(file!.originalname),
+      }),
+    );
+    return toCategoryResponse(saved, baseUrl);
   }
 
   async update(
     id: string,
     dto: UpdateCategoryDto,
-    file: UploadedFile | undefined,
+    file: UploadedImageFile | undefined,
     baseUrl: string,
   ) {
     const category = await this.categoriesRepository.findOne({ where: { id } });
@@ -112,8 +96,10 @@ export class CategoriesService {
       category.imageFilename = sanitizeFilename(file.originalname);
     }
 
-    const saved = await this.categoriesRepository.save(category);
-    return this.toCategoryResponse(saved, baseUrl);
+    return toCategoryResponse(
+      await this.categoriesRepository.save(category),
+      baseUrl,
+    );
   }
 
   async delete(id: string, baseUrl: string) {

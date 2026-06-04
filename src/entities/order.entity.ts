@@ -9,7 +9,7 @@ import {
 } from 'typeorm';
 import { Users } from './users.entity';
 
-@Entity()
+@Entity('order')
 export class Order {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -25,7 +25,7 @@ export class Order {
   address: string;
 
   @Column('json')
-  items: any;
+  items: unknown;
 
   @Column()
   paymentMethod: string;

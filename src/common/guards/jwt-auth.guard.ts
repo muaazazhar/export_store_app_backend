@@ -13,6 +13,8 @@ interface RequestWithHeaders {
     userId: string;
     role: string;
     email: string;
+    username: string;
+    isVerified: boolean;
   };
 }
 
@@ -28,12 +30,16 @@ export class JwtAuthGuard implements CanActivate {
     const authHeader = request.headers.authorization;
 
     if (!authHeader) {
-      throw new UnauthorizedException('Missing authorization header');
+      throw new UnauthorizedException({
+        message: 'Unauthorized',
+      });
     }
 
     const [type, token] = authHeader.split(' ');
     if (type !== 'Bearer' || !token) {
-      throw new UnauthorizedException('Invalid authorization format');
+      throw new UnauthorizedException({
+        message: 'Unauthorized',
+      });
     }
 
     try {
@@ -44,17 +50,35 @@ export class JwtAuthGuard implements CanActivate {
 
       const user = await this.usersService.findById(payload.userId);
       if (!user) {
-        throw new UnauthorizedException('User no longer exists');
+        throw new UnauthorizedException({
+          message: 'Unauthorized',
+        });
       }
 
       request.user = {
         userId: user.id,
         role: user.role,
         email: user.email,
+        username: user.username,
+        isVerified: user.isVerified,
       };
       return true;
-    } catch {
-      throw new UnauthorizedException('Invalid or expired token');
+    } catch (error) {
+      if (error instanceof UnauthorizedException) {
+        throw error;
+      }
+      const isExpired =
+        error instanceof Error &&
+        (error.name === 'TokenExpiredError' || error.message?.includes('expired'));
+      if (isExpired) {
+        throw new UnauthorizedException({
+          message: 'Unauthorized',
+          code: 'TOKEN_EXPIRED',
+        });
+      }
+      throw new UnauthorizedException({
+        message: 'Unauthorized',
+      });
     }
   }
 }

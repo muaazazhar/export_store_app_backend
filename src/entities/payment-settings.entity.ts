@@ -5,6 +5,15 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 
+export const POPULAR_CRITERIA_VALUES = [
+  'most_ordered',
+  'highest_discount',
+  'newest',
+  'featured',
+] as const;
+
+export type PopularCriteria = (typeof POPULAR_CRITERIA_VALUES)[number];
+
 @Entity('payment_settings')
 export class PaymentSettings {
   @PrimaryGeneratedColumn('uuid')
@@ -36,6 +45,15 @@ export class PaymentSettings {
 
   @Column('decimal', { precision: 12, scale: 2, default: 0 })
   deliveryCharge: number;
+
+  @Column({ type: 'int', default: 12 })
+  popularProductLimit: number;
+
+  @Column({ type: 'varchar', length: 32, default: 'most_ordered' })
+  popularCriteria: PopularCriteria;
+
+  @Column({ type: 'jsonb', default: () => "'[]'" })
+  featuredProductIds: string[];
 
   @UpdateDateColumn({ type: 'timestamptz' })
   updatedAt: Date;

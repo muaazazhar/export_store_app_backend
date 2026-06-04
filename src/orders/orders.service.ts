@@ -6,7 +6,10 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
+import { buildApiResourceUrl } from '../common/http/api-url.util';
+import { ALLOWED_PAYMENT_METHODS } from '../common/orders/payment-methods.const';
 import { toPaymentScreenshotColumns } from '../common/upload/order-payment-upload.util';
+import { UploadedImageFile } from '../common/upload/uploaded-file.type';
 import { Order } from '../entities/order.entity';
 import { Product } from '../entities/product.entity';
 import { Users } from '../entities/users.entity';
@@ -22,20 +25,6 @@ import {
   normalizeOrderStatus,
 } from './order-status.util';
 
-type UploadedFile = {
-  mimetype: string;
-  size: number;
-  originalname: string;
-  buffer: Buffer;
-};
-
-const ALLOWED_PAYMENT_METHODS = [
-  'cash_on_delivery',
-  'bank_transfer',
-  'wallet',
-  'credit_debit_card',
-];
-
 @Injectable()
 export class OrdersService {
   constructor(
@@ -48,11 +37,6 @@ export class OrdersService {
     private readonly paymentSettingsService: PaymentSettingsService,
   ) {}
 
-  private buildApiBaseUrl(baseUrl: string): string {
-    const apiPrefix = process.env.API_PREFIX?.trim();
-    return apiPrefix ? `${baseUrl}/${apiPrefix}` : baseUrl;
-  }
-
   private buildPaymentScreenshotUrl(
     order: Order,
     baseUrl: string,
@@ -60,8 +44,10 @@ export class OrdersService {
     if (!order.paymentScreenshotMime) {
       return null;
     }
-    const apiBaseUrl = this.buildApiBaseUrl(baseUrl);
-    return `${apiBaseUrl}/orders/${order.id}/payment-screenshot`;
+    return buildApiResourceUrl(
+      baseUrl,
+      `/orders/${order.id}/payment-screenshot`,
+    );
   }
 
   private discountedUnitPrice(product: Product): number {
@@ -107,7 +93,7 @@ export class OrdersService {
   async create(
     userId: string,
     body: Record<string, unknown>,
-    paymentScreenshot: UploadedFile | undefined,
+    paymentScreenshot: UploadedImageFile | undefined,
     baseUrl: string,
   ) {
     const payload = parseCreateOrderBody(body);
@@ -118,7 +104,7 @@ export class OrdersService {
     const paymentMethod = normalized.paymentMethod;
     const walletProvider = normalized.walletProvider;
 
-    if (!ALLOWED_PAYMENT_METHODS.includes(paymentMethod)) {
+    if (!(ALLOWED_PAYMENT_METHODS as readonly string[]).includes(paymentMethod)) {
       throw new BadRequestException(
         'Payment method must be one of: cash_on_delivery, bank_transfer, wallet, credit_debit_card',
       );

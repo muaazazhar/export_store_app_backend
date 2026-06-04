@@ -1,11 +1,12 @@
 import { Module } from '@nestjs/common';
 import { APP_INTERCEPTOR } from '@nestjs/core';
-import { AppController } from './app.controller';
-import { AppService } from './app.service';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import * as dotenv from 'dotenv';
+import { AppController } from './app.controller';
+import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module';
 import { CategoriesModule } from './categories/categories.module';
+import { AuthGuardsModule } from './common/guards/auth-guards.module';
 import { HttpLoggingInterceptor } from './common/interceptors/http-logging.interceptor';
 import { OrdersModule } from './orders/orders.module';
 import { PaymentSettingsModule } from './payment-settings/payment-settings.module';
@@ -32,8 +33,9 @@ dotenv.config({ path: 'src/.env' });
           ? { rejectUnauthorized: false }
           : false,
     }),
-    UsersModule,
     AuthModule,
+    AuthGuardsModule,
+    UsersModule,
     CategoriesModule,
     ProductsModule,
     OrdersModule,

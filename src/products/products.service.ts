@@ -1,21 +1,24 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
+import { toProductResponse } from '../common/catalog/catalog-response.util';
 import { isValidUuid } from '../common/validation/uuid.util';
 import {
   sanitizeFilename,
   validateImageFile,
 } from '../common/upload/image-upload.util';
+import { UploadedImageFile } from '../common/upload/uploaded-file.type';
 import { Category } from '../entities/categories.entity';
+import { Order } from '../entities/order.entity';
+import { PaymentSettings } from '../entities/payment-settings.entity';
 import { Product } from '../entities/product.entity';
+import { PaymentSettingsService } from '../payment-settings/payment-settings.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 
-type UploadedFile = {
-  mimetype: string;
-  size: number;
-  originalname: string;
-  buffer: Buffer;
+type OrderQuantityRow = {
+  productId: string;
+  qty: string;
 };
 
 @Injectable()
@@ -25,45 +28,181 @@ export class ProductsService {
     private readonly productsRepository: Repository<Product>,
     @InjectRepository(Category)
     private readonly categoriesRepository: Repository<Category>,
+    @InjectRepository(Order)
+    private readonly ordersRepository: Repository<Order>,
+    private readonly paymentSettingsService: PaymentSettingsService,
   ) {}
 
-  private buildApiBaseUrl(baseUrl: string): string {
-    const apiPrefix = process.env.API_PREFIX?.trim();
-    return apiPrefix ? `${baseUrl}/${apiPrefix}` : baseUrl;
-  }
-
-  private toProductResponse(product: Product, baseUrl: string) {
-    const apiBaseUrl = this.buildApiBaseUrl(baseUrl);
-    return {
-      id: product.id,
-      name: product.name,
-      price: Number(product.price),
-      discount: Number(product.discount ?? 0),
-      imageUrl: `${apiBaseUrl}/products/${product.id}/image`,
-      category: product.category
-        ? {
-            id: product.category.id,
-            name: product.category.name,
-            imageUrl: `${apiBaseUrl}/categories/${product.category.id}/image`,
-          }
-        : null,
-    };
+  private mapProductsInOrder(
+    products: Product[],
+    orderedIds: string[],
+    limit: number,
+    baseUrl: string,
+  ) {
+    const byId = new Map(products.map((p) => [p.id, p]));
+    const result: ReturnType<typeof toProductResponse>[] = [];
+    for (const id of orderedIds) {
+      if (result.length >= limit) {
+        break;
+      }
+      const product = byId.get(id);
+      if (product) {
+        result.push(toProductResponse(product, baseUrl));
+      }
+    }
+    return result;
   }
 
   async findAll(baseUrl: string) {
-    const products = await this.productsRepository.find({ order: { name: 'ASC' } });
-    return products.map((product) => this.toProductResponse(product, baseUrl));
+    const products = await this.productsRepository.find({
+      order: { name: 'ASC' },
+    });
+    return products.map((product) => toProductResponse(product, baseUrl));
+  }
+
+  async findByCategory(categoryId: string, baseUrl: string) {
+    const category = await this.categoriesRepository.findOne({
+      where: { id: categoryId },
+    });
+    if (!category) {
+      throw new NotFoundException('Category not found');
+    }
+
+    const products = await this.productsRepository.find({
+      where: { category: { id: categoryId } },
+      order: { name: 'ASC' },
+    });
+    return products.map((product) => toProductResponse(product, baseUrl));
+  }
+
+  async findPopular(baseUrl: string) {
+    const settings = await this.paymentSettingsService.getOrCreate();
+    const limit = this.paymentSettingsService.getPopularProductLimit(settings);
+
+    switch (settings.popularCriteria) {
+      case 'highest_discount':
+        return this.findPopularByHighestDiscount(limit, baseUrl);
+      case 'newest':
+        return this.findPopularByNewest(limit, baseUrl);
+      case 'featured':
+        return this.findPopularByFeatured(settings, limit, baseUrl);
+      case 'most_ordered':
+      default:
+        return this.findPopularByMostOrdered(limit, baseUrl);
+    }
+  }
+
+  private async findPopularByHighestDiscount(limit: number, baseUrl: string) {
+    const products = await this.productsRepository.find({
+      order: { discount: 'DESC', createdAt: 'DESC' },
+      take: limit,
+    });
+    return products.map((p) => toProductResponse(p, baseUrl));
+  }
+
+  private async findPopularByNewest(limit: number, baseUrl: string) {
+    const products = await this.productsRepository.find({
+      order: { createdAt: 'DESC' },
+      take: limit,
+    });
+    return products.map((p) => toProductResponse(p, baseUrl));
+  }
+
+  private async findPopularByFeatured(
+    settings: PaymentSettings,
+    limit: number,
+    baseUrl: string,
+  ) {
+    const featuredIds = (settings.featuredProductIds ?? []).filter((id) =>
+      isValidUuid(id),
+    );
+    if (featuredIds.length === 0) {
+      return [];
+    }
+
+    const featuredProducts = await this.productsRepository.find({
+      where: { id: In(featuredIds) },
+    });
+    const ordered = this.mapProductsInOrder(
+      featuredProducts,
+      featuredIds,
+      limit,
+      baseUrl,
+    );
+
+    if (ordered.length >= limit) {
+      return ordered;
+    }
+
+    const usedIds = new Set(ordered.map((p) => p.id));
+    const fillProducts = await this.productsRepository.find({
+      order: { createdAt: 'DESC' },
+      take: limit + featuredIds.length,
+    });
+    for (const product of fillProducts) {
+      if (ordered.length >= limit) {
+        break;
+      }
+      if (!usedIds.has(product.id)) {
+        ordered.push(toProductResponse(product, baseUrl));
+        usedIds.add(product.id);
+      }
+    }
+
+    return ordered;
+  }
+
+  private async findPopularByMostOrdered(limit: number, baseUrl: string) {
+    const rows = (await this.ordersRepository.query(`
+      SELECT elem->>'productId' AS "productId",
+             SUM((elem->>'quantity')::numeric) AS qty
+      FROM "order" o,
+      jsonb_array_elements(o.items::jsonb) elem
+      GROUP BY elem->>'productId'
+      ORDER BY qty DESC
+    `)) as OrderQuantityRow[];
+
+    const rankedIds = rows
+      .map((row) => row.productId)
+      .filter((id) => isValidUuid(id));
+
+    if (rankedIds.length === 0) {
+      return this.findPopularByNewest(limit, baseUrl);
+    }
+
+    const products = await this.productsRepository.find({
+      where: { id: In(rankedIds.slice(0, limit * 2)) },
+    });
+
+    const sorted = [...products].sort((a, b) => {
+      const qtyA = Number(rows.find((r) => r.productId === a.id)?.qty ?? 0);
+      const qtyB = Number(rows.find((r) => r.productId === b.id)?.qty ?? 0);
+      if (qtyB !== qtyA) {
+        return qtyB - qtyA;
+      }
+      return a.name.localeCompare(b.name);
+    });
+
+    return sorted.slice(0, limit).map((p) => toProductResponse(p, baseUrl));
   }
 
   async findImage(id: string): Promise<Product> {
-    const product = await this.productsRepository.findOne({ where: { id } });
+    const product = await this.productsRepository
+      .createQueryBuilder('product')
+      .addSelect('product.imageBlob')
+      .where('product.id = :id', { id })
+      .getOne();
     if (!product) {
       throw new NotFoundException('Product not found');
     }
     return product;
   }
 
-  async create(dto: CreateProductDto, file: UploadedFile | undefined, baseUrl: string) {
+  async create(
+    dto: CreateProductDto,
+    file: UploadedImageFile | undefined,
+    baseUrl: string,
+  ) {
     if (!dto.name?.trim()) {
       throw new BadRequestException('Product name is required');
     }
@@ -86,23 +225,24 @@ export class ProductsService {
       throw new NotFoundException('Category not found');
     }
 
-    const product = this.productsRepository.create({
-      name: dto.name.trim(),
-      price: Number(dto.price),
-      discount,
-      imageBlob: file!.buffer,
-      imageMime: file!.mimetype,
-      imageFilename: sanitizeFilename(file!.originalname),
-      category,
-    });
-    const saved = await this.productsRepository.save(product);
-    return this.toProductResponse(saved, baseUrl);
+    const saved = await this.productsRepository.save(
+      this.productsRepository.create({
+        name: dto.name.trim(),
+        price: Number(dto.price),
+        discount,
+        imageBlob: file!.buffer,
+        imageMime: file!.mimetype,
+        imageFilename: sanitizeFilename(file!.originalname),
+        category,
+      }),
+    );
+    return toProductResponse(saved, baseUrl);
   }
 
   async update(
     id: string,
     dto: UpdateProductDto,
-    file: UploadedFile | undefined,
+    file: UploadedImageFile | undefined,
     baseUrl: string,
   ) {
     const product = await this.productsRepository.findOne({ where: { id } });
@@ -148,8 +288,10 @@ export class ProductsService {
       product.imageFilename = sanitizeFilename(file.originalname);
     }
 
-    const saved = await this.productsRepository.save(product);
-    return this.toProductResponse(saved, baseUrl);
+    return toProductResponse(
+      await this.productsRepository.save(product),
+      baseUrl,
+    );
   }
 
   async remove(id: string): Promise<{ message: string }> {

@@ -18,6 +18,7 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
+import { getRequestBaseUrl } from '../common/http/api-url.util';
 import { MAX_PAYMENT_SCREENSHOT_BYTES } from '../common/upload/order-payment-upload.util';
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
 import { OrdersService } from './orders.service';
@@ -26,10 +27,6 @@ import { OrdersService } from './orders.service';
 @UseGuards(JwtAuthGuard)
 export class OrdersController {
   constructor(private readonly ordersService: OrdersService) {}
-
-  private requestBaseUrl(req: Request): string {
-    return `${req.protocol}://${req.get('host')}`;
-  }
 
   @Post()
   @UseInterceptors(
@@ -50,7 +47,7 @@ export class OrdersController {
       user.userId,
       body,
       paymentScreenshot,
-      this.requestBaseUrl(req),
+      getRequestBaseUrl(req),
     );
   }
 
@@ -58,7 +55,7 @@ export class OrdersController {
   findMine(@CurrentUser() user: { userId: string }, @Req() req: Request) {
     return this.ordersService.findMine(
       user.userId,
-      this.requestBaseUrl(req),
+      getRequestBaseUrl(req),
     );
   }
 
@@ -91,7 +88,7 @@ export class OrdersController {
       id,
       user.userId,
       user.role,
-      this.requestBaseUrl(req),
+      getRequestBaseUrl(req),
     );
   }
 
@@ -99,7 +96,7 @@ export class OrdersController {
   @UseGuards(RolesGuard)
   @Roles('admin')
   findAll(@Req() req: Request) {
-    return this.ordersService.findAll(this.requestBaseUrl(req));
+    return this.ordersService.findAll(getRequestBaseUrl(req));
   }
 
   @Patch(':id')
@@ -113,7 +110,7 @@ export class OrdersController {
     return this.ordersService.updateOrder(
       id,
       dto,
-      this.requestBaseUrl(req),
+      getRequestBaseUrl(req),
     );
   }
 }

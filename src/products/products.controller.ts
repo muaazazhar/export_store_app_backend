@@ -18,6 +18,8 @@ import type { Request, Response } from 'express';
 import { Roles } from '../common/decorators/roles.decorator';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
+import { VerifiedAuthGuard } from '../common/guards/verified-auth.guard';
+import { getRequestBaseUrl } from '../common/http/api-url.util';
 import { MAX_IMAGE_SIZE_BYTES } from '../common/upload/image-upload.util';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
@@ -27,9 +29,17 @@ import { ProductsService } from './products.service';
 export class ProductsController {
   constructor(private readonly productsService: ProductsService) {}
 
+  @Get('popular')
+  @UseGuards(JwtAuthGuard, VerifiedAuthGuard)
+  findPopular(@Req() req: Request) {
+    return this.productsService.findPopular(getRequestBaseUrl(req));
+  }
+
   @Get()
+  @UseGuards(JwtAuthGuard, VerifiedAuthGuard, RolesGuard)
+  @Roles('admin')
   findAll(@Req() req: Request) {
-    return this.productsService.findAll(`${req.protocol}://${req.get('host')}`);
+    return this.productsService.findAll(getRequestBaseUrl(req));
   }
 
   @Get(':id/image')
@@ -58,7 +68,7 @@ export class ProductsController {
     return this.productsService.create(
       dto,
       file,
-      `${req.protocol}://${req.get('host')}`,
+      getRequestBaseUrl(req),
     );
   }
 
@@ -76,7 +86,7 @@ export class ProductsController {
       id,
       dto,
       file,
-      `${req.protocol}://${req.get('host')}`,
+      getRequestBaseUrl(req),
     );
   }
 

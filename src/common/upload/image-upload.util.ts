@@ -1,4 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
+import { UploadedImageFile } from './uploaded-file.type';
 
 export const ALLOWED_IMAGE_MIME_TYPES = [
   'image/jpeg',
@@ -6,20 +7,16 @@ export const ALLOWED_IMAGE_MIME_TYPES = [
   'image/webp',
 ];
 
-export const MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024; // 10MB
-
-type UploadedFile = {
-  mimetype: string;
-  size: number;
-  originalname: string;
-  buffer: Buffer;
-};
+export const MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024;
 
 export function sanitizeFilename(filename: string): string {
   return filename.replace(/[^a-zA-Z0-9._-]/g, '_');
 }
 
-export function validateImageFile(file?: UploadedFile, required = true): void {
+export function validateImageFile(
+  file?: UploadedImageFile,
+  required = true,
+): void {
   if (!file) {
     if (required) {
       throw new BadRequestException('Image file is required');

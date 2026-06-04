@@ -266,7 +266,7 @@ export class AuthService {
     };
   }
 
-  private toPublicUser(user: Users) {
+  toPublicUser(user: Users) {
     return {
       id: user.id,
       email: user.email,
@@ -274,6 +274,16 @@ export class AuthService {
       role: user.role,
       isVerified: user.isVerified,
     };
+  }
+
+  async getMe(userId: string) {
+    const user = await this.usersService.findById(userId);
+    if (!user) {
+      throw new UnauthorizedException({
+        message: 'Unauthorized',
+      });
+    }
+    return this.toPublicUser(user);
   }
 
   getGoogleAuthStartUrl(): string {

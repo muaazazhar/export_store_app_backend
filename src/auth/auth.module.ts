@@ -11,11 +11,11 @@ import { AuthService } from './auth.service';
     EmailModule,
     JwtModule.register({
       secret: process.env.JWT_SECRET ?? 'super-secret-key',
-      signOptions: { expiresIn: '7d' },
+      signOptions: { expiresIn: '24h' },
     }),
   ],
   controllers: [AuthController],
   providers: [AuthService],
-  exports: [JwtModule],
+  exports: [JwtModule, AuthService],
 })
 export class AuthModule {}

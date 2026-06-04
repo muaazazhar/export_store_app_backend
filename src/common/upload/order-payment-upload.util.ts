@@ -1,17 +1,11 @@
 import { BadRequestException } from '@nestjs/common';
 import { ALLOWED_IMAGE_MIME_TYPES, sanitizeFilename } from './image-upload.util';
+import { UploadedImageFile } from './uploaded-file.type';
 
 export const MAX_PAYMENT_SCREENSHOT_BYTES = 5 * 1024 * 1024;
 
-export type PaymentScreenshotFile = {
-  mimetype: string;
-  size: number;
-  originalname: string;
-  buffer: Buffer;
-};
-
 export function validatePaymentScreenshotFile(
-  file?: PaymentScreenshotFile,
+  file?: UploadedImageFile,
   required = false,
 ): void {
   if (!file) {
@@ -34,7 +28,7 @@ export function validatePaymentScreenshotFile(
   }
 }
 
-export function toPaymentScreenshotColumns(file: PaymentScreenshotFile): {
+export function toPaymentScreenshotColumns(file: UploadedImageFile): {
   paymentScreenshotBlob: Buffer;
   paymentScreenshotMime: string;
   paymentScreenshotFilename: string;

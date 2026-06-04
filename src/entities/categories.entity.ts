@@ -1,6 +1,6 @@
 import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
 
-@Entity()
+@Entity('category')
 export class Category {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -8,7 +8,7 @@ export class Category {
   @Column()
   name: string;
 
-  @Column({ type: 'bytea' })
+  @Column({ type: 'bytea', select: false })
   imageBlob: Buffer;
 
   @Column()

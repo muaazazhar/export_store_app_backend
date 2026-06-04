@@ -7,6 +7,8 @@ export const CurrentUser = createParamDecorator(
         userId: string;
         role: string;
         email: string;
+        username: string;
+        isVerified: boolean;
       };
     }>();
     return request.user;

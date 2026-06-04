@@ -18,19 +18,36 @@ import type { Request, Response } from 'express';
 import { Roles } from '../common/decorators/roles.decorator';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
+import { VerifiedAuthGuard } from '../common/guards/verified-auth.guard';
+import { getRequestBaseUrl } from '../common/http/api-url.util';
 import { MAX_IMAGE_SIZE_BYTES } from '../common/upload/image-upload.util';
+import { ProductsService } from '../products/products.service';
 import { CategoriesService } from './categories.service';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
 
 @Controller('categories')
 export class CategoriesController {
-  constructor(private readonly categoriesService: CategoriesService) {}
+  constructor(
+    private readonly categoriesService: CategoriesService,
+    private readonly productsService: ProductsService,
+  ) {}
 
   @Get()
+  @UseGuards(JwtAuthGuard, VerifiedAuthGuard)
   findAll(@Req() req: Request) {
-    return this.categoriesService.findAll(
-      `${req.protocol}://${req.get('host')}`,
+    return this.categoriesService.findAll(getRequestBaseUrl(req));
+  }
+
+  @Get(':categoryId/products')
+  @UseGuards(JwtAuthGuard, VerifiedAuthGuard)
+  findCategoryProducts(
+    @Param('categoryId', ParseUUIDPipe) categoryId: string,
+    @Req() req: Request,
+  ) {
+    return this.productsService.findByCategory(
+      categoryId,
+      getRequestBaseUrl(req),
     );
   }
 
@@ -68,7 +85,7 @@ export class CategoriesController {
     return this.categoriesService.create(
       dto,
       file,
-      `${req.protocol}://${req.get('host')}`,
+      getRequestBaseUrl(req),
     );
   }
 
@@ -94,7 +111,7 @@ export class CategoriesController {
       id,
       dto,
       file,
-      `${req.protocol}://${req.get('host')}`,
+      getRequestBaseUrl(req),
     );
   }
 
@@ -104,7 +121,7 @@ export class CategoriesController {
   async remove(@Param('id', ParseUUIDPipe) id: string, @Req() req: Request) {
     return this.categoriesService.delete(
       id,
-      `${req.protocol}://${req.get('host')}`,
+      getRequestBaseUrl(req),
     );
   }
 }
