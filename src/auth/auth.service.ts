@@ -1,6 +1,8 @@
 import {
   BadRequestException,
   ForbiddenException,
+  HttpException,
+  HttpStatus,
   InternalServerErrorException,
   Injectable,
   Logger,
@@ -9,6 +11,7 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { EmailService } from '../common/email/email.service';
+import { toPublicUser } from '../common/users/public-user.util';
 import { Users } from '../entities/users.entity';
 import { UsersService } from '../users/users.service';
 import {
@@ -20,10 +23,25 @@ import {
   VERIFICATION_RESEND_SECONDS,
 } from './email-verification.util';
 import { GoogleExchangeDto } from './dto/google-exchange.dto';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
+import { ResendResetOtpDto } from './dto/resend-reset-otp.dto';
 import { ResendVerificationDto } from './dto/resend-verification.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
+import { VerifyResetOtpDto } from './dto/verify-reset-otp.dto';
+import {
+  generatePasswordResetToken,
+  getPasswordResetExpiryDate,
+  getPasswordResetResendCooldownSeconds,
+  getPasswordResetTokenExpiryDate,
+  isPasswordResetTokenValid,
+  MAX_PASSWORD_RESET_ATTEMPTS,
+  MIN_RESET_PASSWORD_LENGTH,
+  PASSWORD_RESET_TOKEN_EXPIRY_SECONDS,
+} from './password-reset.util';
+import { normalizePhone } from '../common/validation/phone.util';
 
 @Injectable()
 export class AuthService {
@@ -39,6 +57,23 @@ export class AuthService {
     const email = dto.email?.trim().toLowerCase();
     const username = dto.username?.trim().toLowerCase();
     const password = dto.password?.trim();
+    const phoneRaw = dto.phone ?? dto.phone_number;
+
+    if (!phoneRaw?.trim()) {
+      throw new BadRequestException({
+        message: 'Phone number is required.',
+        code: 'PHONE_REQUIRED',
+      });
+    }
+
+    const phone = normalizePhone(phoneRaw);
+    if (!phone) {
+      throw new BadRequestException({
+        message: 'Enter a valid phone number.',
+        code: 'PHONE_INVALID',
+      });
+    }
+
     if (!email || !username || !password || password.length < 6) {
       throw new BadRequestException(
         'Email, username and password are required (password min 6 chars)',
@@ -56,6 +91,13 @@ export class AuthService {
     if (existingByUsername) {
       throw new BadRequestException('Username already registered');
     }
+    const existingByPhone = await this.usersService.findByPhone(phone);
+    if (existingByPhone) {
+      throw new BadRequestException({
+        message: 'This phone number is already registered.',
+        code: 'PHONE_ALREADY_EXISTS',
+      });
+    }
 
     const hashedPassword = await bcrypt.hash(dto.password, 10);
     let user: Users | undefined;
@@ -63,9 +105,11 @@ export class AuthService {
       user = await this.usersService.createUser({
         email,
         username,
+        phone,
         password: hashedPassword,
         role: 'user',
         isVerified: false,
+        phoneVerified: false,
       });
       await this.issueAndSendVerificationCode(user);
     } catch (error) {
@@ -88,7 +132,7 @@ export class AuthService {
       message: 'Verification code sent to your email.',
       email: user.email,
       resendAvailableInSeconds: VERIFICATION_RESEND_SECONDS,
-      user: this.toPublicUser(user),
+      user: toPublicUser(user),
     };
   }
 
@@ -204,6 +248,228 @@ export class AuthService {
     };
   }
 
+  async forgotPassword(dto: ForgotPasswordDto) {
+    const email = this.normalizeEmail(dto.email);
+    if (!email) {
+      throw new BadRequestException('A valid email is required');
+    }
+
+    const user = await this.usersService.findByEmail(email);
+    if (!user) {
+      return this.buildForgotPasswordSuccessResponse(email);
+    }
+
+    await this.issuePasswordResetCodeIfAllowed(user);
+    return this.buildForgotPasswordSuccessResponse(email);
+  }
+
+  async resendResetOtp(dto: ResendResetOtpDto) {
+    const email = this.normalizeEmail(dto.email);
+    if (!email) {
+      throw new BadRequestException('A valid email is required');
+    }
+
+    const user = await this.usersService.findByEmail(email);
+    if (!user) {
+      return {
+        message: 'Reset code sent.',
+        email,
+        resendAvailableInSeconds: VERIFICATION_RESEND_SECONDS,
+      };
+    }
+
+    await this.issuePasswordResetCodeIfAllowed(user);
+    return {
+      message: 'Reset code sent.',
+      email: user.email,
+      resendAvailableInSeconds: VERIFICATION_RESEND_SECONDS,
+    };
+  }
+
+  async verifyResetOtp(dto: VerifyResetOtpDto) {
+    const email = this.normalizeEmail(dto.email);
+    const code = dto.code?.trim();
+    if (!email || !code) {
+      throw new BadRequestException('Email and verification code are required');
+    }
+
+    const user = await this.usersService.findByEmail(email);
+    if (!user) {
+      throw new BadRequestException({
+        message: 'Invalid or expired code.',
+        code: 'INVALID_RESET_CODE',
+      });
+    }
+
+    if (user.passwordResetAttempts >= MAX_PASSWORD_RESET_ATTEMPTS) {
+      throw new BadRequestException({
+        message: 'Too many attempts. Request a new code.',
+        code: 'RESET_CODE_LOCKED',
+      });
+    }
+
+    if (
+      !user.passwordResetCodeExpiresAt ||
+      user.passwordResetCodeExpiresAt.getTime() < Date.now()
+    ) {
+      throw new BadRequestException({
+        message: 'Invalid or expired code.',
+        code: 'INVALID_RESET_CODE',
+      });
+    }
+
+    const isCodeValid = await isVerificationCodeValid(
+      code,
+      user.passwordResetCodeHash,
+    );
+    if (!isCodeValid) {
+      const updated = await this.usersService.incrementPasswordResetAttempts(user);
+      if (updated.passwordResetAttempts >= MAX_PASSWORD_RESET_ATTEMPTS) {
+        throw new BadRequestException({
+          message: 'Too many attempts. Request a new code.',
+          code: 'RESET_CODE_LOCKED',
+        });
+      }
+      throw new BadRequestException({
+        message: 'Invalid or expired code.',
+        code: 'INVALID_RESET_CODE',
+      });
+    }
+
+    const { token, hash } = await generatePasswordResetToken(user.id);
+    await this.usersService.setPasswordResetToken(
+      user,
+      hash,
+      getPasswordResetTokenExpiryDate(),
+    );
+
+    return {
+      message: 'Code verified. You can set a new password.',
+      resetToken: token,
+      expiresInSeconds: PASSWORD_RESET_TOKEN_EXPIRY_SECONDS,
+    };
+  }
+
+  async resetPassword(dto: ResetPasswordDto) {
+    const resetToken = dto.resetToken?.trim();
+    const newPassword = dto.newPassword?.trim();
+    const confirmPassword = dto.confirmPassword?.trim();
+
+    if (!resetToken) {
+      throw new UnauthorizedException({
+        message: 'Invalid reset token',
+        code: 'RESET_TOKEN_INVALID',
+      });
+    }
+
+    if (!newPassword || !confirmPassword) {
+      throw new BadRequestException('New password and confirmation are required');
+    }
+
+    if (newPassword !== confirmPassword) {
+      throw new BadRequestException({
+        message: 'Passwords do not match',
+        code: 'PASSWORDS_DO_NOT_MATCH',
+      });
+    }
+
+    if (newPassword.length < MIN_RESET_PASSWORD_LENGTH) {
+      throw new BadRequestException({
+        message: `Password must be at least ${MIN_RESET_PASSWORD_LENGTH} characters`,
+        code: 'WEAK_PASSWORD',
+      });
+    }
+
+    const userId = resetToken.split('.')[0];
+    const user = await this.usersService.findById(userId);
+    if (!user?.passwordResetTokenHash) {
+      throw new UnauthorizedException({
+        message: 'Invalid reset token',
+        code: 'RESET_TOKEN_INVALID',
+      });
+    }
+
+    if (
+      !user.passwordResetTokenExpiresAt ||
+      user.passwordResetTokenExpiresAt.getTime() < Date.now()
+    ) {
+      throw new UnauthorizedException({
+        message: 'Reset link expired, request a new code',
+        code: 'RESET_TOKEN_EXPIRED',
+      });
+    }
+
+    const isTokenValid = await isPasswordResetTokenValid(
+      resetToken,
+      user.passwordResetTokenHash,
+    );
+    if (!isTokenValid) {
+      throw new UnauthorizedException({
+        message: 'Invalid reset token',
+        code: 'RESET_TOKEN_INVALID',
+      });
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+    await this.usersService.updatePassword(user, passwordHash);
+    await this.usersService.clearPasswordResetState(user);
+
+    return {
+      message: 'Password updated successfully.',
+    };
+  }
+
+  private normalizeEmail(raw?: string): string | null {
+    const email = raw?.trim().toLowerCase();
+    if (!email || !email.includes('@')) {
+      return null;
+    }
+    return email;
+  }
+
+  private buildForgotPasswordSuccessResponse(email: string) {
+    return {
+      message:
+        'If an account exists for this email, a reset code has been sent.',
+      email,
+      resendAvailableInSeconds: VERIFICATION_RESEND_SECONDS,
+    };
+  }
+
+  private async issuePasswordResetCodeIfAllowed(user: Users): Promise<void> {
+    const cooldownSeconds = getPasswordResetResendCooldownSeconds(user);
+    if (cooldownSeconds > 0) {
+      throw new HttpException(
+        {
+          message: 'Please wait before requesting another code.',
+          code: 'RESEND_COOLDOWN',
+          resendAvailableInSeconds: cooldownSeconds,
+        },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+
+    const code = generateVerificationCode();
+    const codeHash = await hashVerificationCode(code);
+    const expiresAt = getPasswordResetExpiryDate();
+    const sentAt = new Date();
+
+    await this.usersService.setPasswordResetCode(
+      user,
+      codeHash,
+      expiresAt,
+      sentAt,
+    );
+
+    try {
+      await this.emailService.sendPasswordResetEmail(user.email, code);
+    } catch {
+      throw new InternalServerErrorException(
+        'Unable to send password reset email. Please try again later.',
+      );
+    }
+  }
+
   private async trySendVerificationForUnverifiedUser(user: Users): Promise<{
     resendAvailableInSeconds: number;
     verificationEmailSent: boolean;
@@ -262,17 +528,7 @@ export class AuthService {
         userId: user.id,
         role: user.role,
       }),
-      user: this.toPublicUser(user),
-    };
-  }
-
-  toPublicUser(user: Users) {
-    return {
-      id: user.id,
-      email: user.email,
-      username: user.username,
-      role: user.role,
-      isVerified: user.isVerified,
+      user: toPublicUser(user),
     };
   }
 
@@ -283,7 +539,7 @@ export class AuthService {
         message: 'Unauthorized',
       });
     }
-    return this.toPublicUser(user);
+    return toPublicUser(user);
   }
 
   getGoogleAuthStartUrl(): string {

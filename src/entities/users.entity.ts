@@ -11,6 +11,12 @@ export class Users {
   @Column({ unique: true })
   username: string;
 
+  @Column({ type: 'varchar', length: 20, unique: true, nullable: true })
+  phone: string | null;
+
+  @Column({ default: false })
+  phoneVerified: boolean;
+
   @Column()
   password: string;
 
@@ -28,4 +34,22 @@ export class Users {
 
   @Column({ type: 'timestamptz', nullable: true })
   verificationSentAt: Date | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  passwordResetCodeHash: string | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  passwordResetCodeExpiresAt: Date | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  passwordResetSentAt: Date | null;
+
+  @Column({ type: 'int', default: 0 })
+  passwordResetAttempts: number;
+
+  @Column({ type: 'varchar', nullable: true })
+  passwordResetTokenHash: string | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  passwordResetTokenExpiresAt: Date | null;
 }

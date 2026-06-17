@@ -4,6 +4,10 @@ import {
   buildVerificationEmailHtml,
   buildVerificationEmailText,
 } from './templates/verification-email.template';
+import {
+  buildPasswordResetEmailHtml,
+  buildPasswordResetEmailText,
+} from './templates/password-reset-email.template';
 
 const SMTP_TIMEOUT_MS = Number(process.env.SMTP_TIMEOUT_MS ?? 15_000);
 
@@ -22,13 +26,45 @@ export class EmailService {
     const html = buildVerificationEmailHtml(templateParams);
     const text = buildVerificationEmailText(templateParams);
 
+    await this.sendTransactionalEmail(to, subject, html, text, appName, 'Verification');
+  }
+
+  async sendPasswordResetEmail(to: string, code: string): Promise<void> {
+    const appName = process.env.APP_NAME?.trim() || 'Store App';
+    const expiryMinutes = Number(
+      process.env.PASSWORD_RESET_EXPIRY_MINUTES ?? 15,
+    );
+    const templateParams = { appName, code, expiryMinutes };
+    const subject = `${appName} — Your password reset code`;
+    const html = buildPasswordResetEmailHtml(templateParams);
+    const text = buildPasswordResetEmailText(templateParams);
+
+    await this.sendTransactionalEmail(to, subject, html, text, appName, 'Password reset');
+  }
+
+  private async sendTransactionalEmail(
+    to: string,
+    subject: string,
+    html: string,
+    text: string,
+    appName: string,
+    logLabel: string,
+  ): Promise<void> {
     const brevoApiKey = process.env.BREVO_API_KEY?.trim();
     if (brevoApiKey) {
-      await this.sendViaBrevoApi(brevoApiKey, to, subject, html, text, appName);
+      await this.sendViaBrevoApi(
+        brevoApiKey,
+        to,
+        subject,
+        html,
+        text,
+        appName,
+        logLabel,
+      );
       return;
     }
 
-    await this.sendViaSmtp(to, subject, html, text, appName);
+    await this.sendViaSmtp(to, subject, html, text, appName, logLabel);
   }
 
   /** HTTPS API — works on Railway (SMTP ports are often blocked). */
@@ -39,6 +75,7 @@ export class EmailService {
     html: string,
     text: string,
     appName: string,
+    logLabel: string,
   ): Promise<void> {
     const fromEmail =
       process.env.SMTP_FROM?.trim() || process.env.BREVO_SENDER_EMAIL?.trim();
@@ -76,7 +113,7 @@ export class EmailService {
       }
 
       this.logger.log(
-        `Verification email sent via Brevo API to ${this.maskEmail(to)}`,
+        `${logLabel} email sent via Brevo API to ${this.maskEmail(to)}`,
       );
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') {
@@ -94,6 +131,7 @@ export class EmailService {
     html: string,
     text: string,
     appName: string,
+    logLabel: string,
   ): Promise<void> {
     const from = process.env.SMTP_FROM?.trim() || process.env.SMTP_USER?.trim();
     if (!from) {
@@ -110,14 +148,14 @@ export class EmailService {
 
     try {
       await this.getTransporter().sendMail(mail);
-      this.logger.log(`Verification email sent via SMTP to ${this.maskEmail(to)}`);
+      this.logger.log(`${logLabel} email sent via SMTP to ${this.maskEmail(to)}`);
     } catch (error) {
       const hint =
         process.env.NODE_ENV === 'production'
           ? ' (SMTP may be blocked on cloud hosts — set BREVO_API_KEY for HTTPS delivery)'
           : '';
       this.logger.error(
-        `Failed to send verification email via SMTP to ${this.maskEmail(to)}${hint}`,
+        `Failed to send ${logLabel.toLowerCase()} email via SMTP to ${this.maskEmail(to)}${hint}`,
         error instanceof Error ? error.message : undefined,
       );
       throw error;
