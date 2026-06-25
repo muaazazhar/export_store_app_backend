@@ -35,6 +35,7 @@ export class PaymentSettingsService {
       instructions: settings.instructions,
       easypaisaNumber: settings.easypaisaNumber,
       jazzcashNumber: settings.jazzcashNumber,
+      whatsappNumber: settings.whatsappNumber,
       freeDeliveryEnabled: settings.freeDeliveryEnabled,
       deliveryCharge: Number(settings.deliveryCharge ?? 0),
       popularProductLimit: settings.popularProductLimit,
@@ -111,6 +112,9 @@ export class PaymentSettingsService {
       jazzcashNumber: pickNullableString(
         dto.jazzcashNumber ?? dto.jazzcash_number,
       ),
+      whatsappNumber: pickNullableString(
+        dto.whatsappNumber ?? dto.whatsapp_number,
+      ),
       freeDeliveryEnabled: pickBoolean(
         dto.freeDeliveryEnabled ?? dto.free_delivery_enabled,
       ),
@@ -144,6 +148,7 @@ export class PaymentSettingsService {
         instructions: null,
         easypaisaNumber: null,
         jazzcashNumber: null,
+        whatsappNumber: null,
         freeDeliveryEnabled: false,
         deliveryCharge: 0,
         popularProductLimit: 12,
@@ -214,6 +219,7 @@ export class PaymentSettingsService {
       instructions: partial.instructions ?? null,
       easypaisaNumber: partial.easypaisaNumber ?? null,
       jazzcashNumber: partial.jazzcashNumber ?? null,
+      whatsappNumber: partial.whatsappNumber ?? null,
       freeDeliveryEnabled: partial.freeDeliveryEnabled ?? false,
       deliveryCharge: partial.deliveryCharge ?? 0,
       popularProductLimit: partial.popularProductLimit ?? 12,

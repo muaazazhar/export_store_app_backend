@@ -40,6 +40,9 @@ export class PaymentSettings {
   @Column({ type: 'varchar', nullable: true })
   jazzcashNumber: string | null;
 
+  @Column({ type: 'varchar', nullable: true })
+  whatsappNumber: string | null;
+
   @Column({ default: false })
   freeDeliveryEnabled: boolean;
 

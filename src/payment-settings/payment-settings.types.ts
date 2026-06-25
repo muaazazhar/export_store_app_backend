@@ -8,6 +8,7 @@ export type PaymentSettingsResponse = {
   instructions: string | null;
   easypaisaNumber: string | null;
   jazzcashNumber: string | null;
+  whatsappNumber: string | null;
   freeDeliveryEnabled: boolean;
   deliveryCharge: number;
   popularProductLimit: number;
@@ -23,6 +24,7 @@ export type PaymentSettingsInput = {
   instructions?: string | null;
   easypaisaNumber?: string | null;
   jazzcashNumber?: string | null;
+  whatsappNumber?: string | null;
   freeDeliveryEnabled?: boolean;
   deliveryCharge?: number;
   popularProductLimit?: number;
@@ -32,6 +34,7 @@ export type PaymentSettingsInput = {
   account_number?: string;
   easypaisa_number?: string;
   jazzcash_number?: string;
+  whatsapp_number?: string;
   free_delivery_enabled?: boolean;
   delivery_charge?: number;
   popular_product_limit?: number;
