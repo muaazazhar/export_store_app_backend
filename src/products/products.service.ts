@@ -2,6 +2,10 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { toProductResponse } from '../common/catalog/catalog-response.util';
+import {
+  parsePaginationQuery,
+  toPaginatedResponse,
+} from '../common/http/pagination.util';
 import { isValidUuid } from '../common/validation/uuid.util';
 import {
   sanitizeFilename,
@@ -53,14 +57,27 @@ export class ProductsService {
     return result;
   }
 
-  async findAll(baseUrl: string) {
-    const products = await this.productsRepository.find({
-      order: { name: 'ASC' },
+  async findAll(baseUrl: string, query: Record<string, unknown> = {}) {
+    const { page, limit, skip } = parsePaginationQuery(query, 12);
+    const [products, total] = await this.productsRepository.findAndCount({
+      order: { id: 'ASC' },
+      skip,
+      take: limit,
     });
-    return products.map((product) => toProductResponse(product, baseUrl));
+
+    return toPaginatedResponse(
+      products.map((product) => toProductResponse(product, baseUrl)),
+      page,
+      limit,
+      total,
+    );
   }
 
-  async findByCategory(categoryId: string, baseUrl: string) {
+  async findByCategory(
+    categoryId: string,
+    baseUrl: string,
+    query: Record<string, unknown> = {},
+  ) {
     const category = await this.categoriesRepository.findOne({
       where: { id: categoryId },
     });
@@ -68,56 +85,91 @@ export class ProductsService {
       throw new NotFoundException('Category not found');
     }
 
-    const products = await this.productsRepository.find({
+    const { page, limit, skip } = parsePaginationQuery(query, 12);
+    const [products, total] = await this.productsRepository.findAndCount({
       where: { category: { id: categoryId } },
-      order: { name: 'ASC' },
+      order: { name: 'ASC', id: 'ASC' },
+      skip,
+      take: limit,
     });
-    return products.map((product) => toProductResponse(product, baseUrl));
+
+    return toPaginatedResponse(
+      products.map((product) => toProductResponse(product, baseUrl)),
+      page,
+      limit,
+      total,
+    );
   }
 
-  async findPopular(baseUrl: string) {
+  async findPopular(baseUrl: string, query: Record<string, unknown> = {}) {
+    const { page, limit, skip } = parsePaginationQuery(query, 12);
     const settings = await this.paymentSettingsService.getOrCreate();
-    const limit = this.paymentSettingsService.getPopularProductLimit(settings);
 
     switch (settings.popularCriteria) {
       case 'highest_discount':
-        return this.findPopularByHighestDiscount(limit, baseUrl);
+        return this.findPopularByHighestDiscount(page, limit, skip, baseUrl);
       case 'newest':
-        return this.findPopularByNewest(limit, baseUrl);
+        return this.findPopularByNewest(page, limit, skip, baseUrl);
       case 'featured':
-        return this.findPopularByFeatured(settings, limit, baseUrl);
+        return this.findPopularByFeatured(settings, page, limit, skip, baseUrl);
       case 'most_ordered':
       default:
-        return this.findPopularByMostOrdered(limit, baseUrl);
+        return this.findPopularByMostOrdered(page, limit, skip, baseUrl);
     }
   }
 
-  private async findPopularByHighestDiscount(limit: number, baseUrl: string) {
-    const products = await this.productsRepository.find({
-      order: { discount: 'DESC', createdAt: 'DESC' },
+  private async findPopularByHighestDiscount(
+    page: number,
+    limit: number,
+    skip: number,
+    baseUrl: string,
+  ) {
+    const [products, total] = await this.productsRepository.findAndCount({
+      order: { discount: 'DESC', createdAt: 'DESC', id: 'ASC' },
+      skip,
       take: limit,
     });
-    return products.map((p) => toProductResponse(p, baseUrl));
+
+    return toPaginatedResponse(
+      products.map((product) => toProductResponse(product, baseUrl)),
+      page,
+      limit,
+      total,
+    );
   }
 
-  private async findPopularByNewest(limit: number, baseUrl: string) {
-    const products = await this.productsRepository.find({
-      order: { createdAt: 'DESC' },
+  private async findPopularByNewest(
+    page: number,
+    limit: number,
+    skip: number,
+    baseUrl: string,
+  ) {
+    const [products, total] = await this.productsRepository.findAndCount({
+      order: { createdAt: 'DESC', id: 'ASC' },
+      skip,
       take: limit,
     });
-    return products.map((p) => toProductResponse(p, baseUrl));
+
+    return toPaginatedResponse(
+      products.map((product) => toProductResponse(product, baseUrl)),
+      page,
+      limit,
+      total,
+    );
   }
 
   private async findPopularByFeatured(
     settings: PaymentSettings,
+    page: number,
     limit: number,
+    skip: number,
     baseUrl: string,
   ) {
     const featuredIds = (settings.featuredProductIds ?? []).filter((id) =>
       isValidUuid(id),
     );
     if (featuredIds.length === 0) {
-      return [];
+      return toPaginatedResponse([], page, limit, 0);
     }
 
     const featuredProducts = await this.productsRepository.find({
@@ -126,33 +178,32 @@ export class ProductsService {
     const ordered = this.mapProductsInOrder(
       featuredProducts,
       featuredIds,
-      limit,
+      featuredIds.length,
       baseUrl,
     );
 
-    if (ordered.length >= limit) {
-      return ordered;
-    }
-
-    const usedIds = new Set(ordered.map((p) => p.id));
+    const usedIds = new Set(ordered.map((product) => product.id));
     const fillProducts = await this.productsRepository.find({
-      order: { createdAt: 'DESC' },
-      take: limit + featuredIds.length,
+      order: { createdAt: 'DESC', id: 'ASC' },
     });
     for (const product of fillProducts) {
-      if (ordered.length >= limit) {
-        break;
-      }
       if (!usedIds.has(product.id)) {
         ordered.push(toProductResponse(product, baseUrl));
         usedIds.add(product.id);
       }
     }
 
-    return ordered;
+    const total = ordered.length;
+    const data = ordered.slice(skip, skip + limit);
+    return toPaginatedResponse(data, page, limit, total);
   }
 
-  private async findPopularByMostOrdered(limit: number, baseUrl: string) {
+  private async findPopularByMostOrdered(
+    page: number,
+    limit: number,
+    skip: number,
+    baseUrl: string,
+  ) {
     const rows = (await this.ordersRepository.query(`
       SELECT elem->>'productId' AS "productId",
              SUM((elem->>'quantity')::numeric) AS qty
@@ -165,32 +216,30 @@ export class ProductsService {
       ORDER BY qty DESC
     `)) as OrderQuantityRow[];
 
-    const qtyByProductId = new Map(
-      rows.map((row) => [row.productId, Number(row.qty)]),
-    );
-
     const rankedIds = rows
       .map((row) => row.productId)
       .filter((id) => isValidUuid(id));
 
     if (rankedIds.length === 0) {
-      return this.findPopularByNewest(limit, baseUrl);
+      return this.findPopularByNewest(page, limit, skip, baseUrl);
+    }
+
+    const total = rankedIds.length;
+    const pageIds = rankedIds.slice(skip, skip + limit);
+    if (pageIds.length === 0) {
+      return toPaginatedResponse([], page, limit, total);
     }
 
     const products = await this.productsRepository.find({
-      where: { id: In(rankedIds.slice(0, limit * 2)) },
+      where: { id: In(pageIds) },
     });
+    const productsById = new Map(products.map((product) => [product.id, product]));
+    const data = pageIds
+      .map((id) => productsById.get(id))
+      .filter((product): product is Product => Boolean(product))
+      .map((product) => toProductResponse(product, baseUrl));
 
-    const sorted = [...products].sort((a, b) => {
-      const qtyA = qtyByProductId.get(a.id) ?? 0;
-      const qtyB = qtyByProductId.get(b.id) ?? 0;
-      if (qtyB !== qtyA) {
-        return qtyB - qtyA;
-      }
-      return a.name.localeCompare(b.name);
-    });
-
-    return sorted.slice(0, limit).map((p) => toProductResponse(p, baseUrl));
+    return toPaginatedResponse(data, page, limit, total);
   }
 
   async findImage(id: string): Promise<Product> {

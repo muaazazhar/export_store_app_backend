@@ -7,6 +7,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Query,
   Req,
   Res,
   UploadedFile,
@@ -35,8 +36,8 @@ export class CategoriesController {
 
   @Get()
   @UseGuards(JwtAuthGuard, VerifiedAuthGuard)
-  findAll(@Req() req: Request) {
-    return this.categoriesService.findAll(getRequestBaseUrl(req));
+  findAll(@Req() req: Request, @Query() query: Record<string, unknown>) {
+    return this.categoriesService.findAll(getRequestBaseUrl(req), query);
   }
 
   @Get(':categoryId/products')
@@ -44,10 +45,12 @@ export class CategoriesController {
   findCategoryProducts(
     @Param('categoryId', ParseUUIDPipe) categoryId: string,
     @Req() req: Request,
+    @Query() query: Record<string, unknown>,
   ) {
     return this.productsService.findByCategory(
       categoryId,
       getRequestBaseUrl(req),
+      query,
     );
   }
 

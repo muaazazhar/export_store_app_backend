@@ -7,6 +7,10 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { buildApiResourceUrl } from '../common/http/api-url.util';
+import {
+  parsePaginationQuery,
+  toPaginatedResponse,
+} from '../common/http/pagination.util';
 import { ALLOWED_PAYMENT_METHODS } from '../common/orders/payment-methods.const';
 import {
   generateReceiptNumber,
@@ -260,19 +264,43 @@ export class OrdersService {
     return this.toOrderResponse(saved, baseUrl);
   }
 
-  async findMine(userId: string, baseUrl: string) {
-    const orders = await this.orderWithUserQuery()
+  async findMine(
+    userId: string,
+    baseUrl: string,
+    query: Record<string, unknown> = {},
+  ) {
+    const { page, limit, skip } = parsePaginationQuery(query, 10);
+    const [orders, total] = await this.orderWithUserQuery()
       .where('user.id = :userId', { userId })
-      .orderBy('order.orderNo', 'DESC')
-      .getMany();
-    return orders.map((order) => this.toOrderResponse(order, baseUrl));
+      .orderBy('order.createdAt', 'DESC')
+      .addOrderBy('order.orderNo', 'DESC')
+      .skip(skip)
+      .take(limit)
+      .getManyAndCount();
+
+    return toPaginatedResponse(
+      orders.map((order) => this.toOrderResponse(order, baseUrl)),
+      page,
+      limit,
+      total,
+    );
   }
 
-  async findAll(baseUrl: string) {
-    const orders = await this.orderWithUserQuery()
-      .orderBy('order.orderNo', 'DESC')
-      .getMany();
-    return orders.map((order) => this.toOrderResponse(order, baseUrl));
+  async findAll(baseUrl: string, query: Record<string, unknown> = {}) {
+    const { page, limit, skip } = parsePaginationQuery(query, 10);
+    const [orders, total] = await this.orderWithUserQuery()
+      .orderBy('order.createdAt', 'DESC')
+      .addOrderBy('order.orderNo', 'DESC')
+      .skip(skip)
+      .take(limit)
+      .getManyAndCount();
+
+    return toPaginatedResponse(
+      orders.map((order) => this.toOrderResponse(order, baseUrl)),
+      page,
+      limit,
+      total,
+    );
   }
 
   async updateOrder(id: string, dto: UpdateOrderStatusDto, baseUrl: string) {

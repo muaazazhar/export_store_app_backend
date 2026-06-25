@@ -7,6 +7,10 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { toCategoryResponse } from '../common/catalog/catalog-response.util';
 import {
+  parsePaginationQuery,
+  toPaginatedResponse,
+} from '../common/http/pagination.util';
+import {
   sanitizeFilename,
   validateImageFile,
 } from '../common/upload/image-upload.util';
@@ -22,11 +26,20 @@ export class CategoriesService {
     private readonly categoriesRepository: Repository<Category>,
   ) {}
 
-  async findAll(baseUrl: string) {
-    const categories = await this.categoriesRepository.find({
+  async findAll(baseUrl: string, query: Record<string, unknown> = {}) {
+    const { page, limit, skip } = parsePaginationQuery(query, 12);
+    const [categories, total] = await this.categoriesRepository.findAndCount({
       order: { name: 'ASC' },
+      skip,
+      take: limit,
     });
-    return categories.map((category) => toCategoryResponse(category, baseUrl));
+
+    return toPaginatedResponse(
+      categories.map((category) => toCategoryResponse(category, baseUrl)),
+      page,
+      limit,
+      total,
+    );
   }
 
   async findImage(id: string): Promise<Category> {

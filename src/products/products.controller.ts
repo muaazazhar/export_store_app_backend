@@ -7,6 +7,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Query,
   Req,
   Res,
   UploadedFile,
@@ -31,15 +32,18 @@ export class ProductsController {
 
   @Get('popular')
   @UseGuards(JwtAuthGuard, VerifiedAuthGuard)
-  findPopular(@Req() req: Request) {
-    return this.productsService.findPopular(getRequestBaseUrl(req));
+  findPopular(
+    @Req() req: Request,
+    @Query() query: Record<string, unknown>,
+  ) {
+    return this.productsService.findPopular(getRequestBaseUrl(req), query);
   }
 
   @Get()
   @UseGuards(JwtAuthGuard, VerifiedAuthGuard, RolesGuard)
   @Roles('admin')
-  findAll(@Req() req: Request) {
-    return this.productsService.findAll(getRequestBaseUrl(req));
+  findAll(@Req() req: Request, @Query() query: Record<string, unknown>) {
+    return this.productsService.findAll(getRequestBaseUrl(req), query);
   }
 
   @Get(':id/image')

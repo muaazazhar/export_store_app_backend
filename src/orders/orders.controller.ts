@@ -6,6 +6,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Query,
   Req,
   Res,
   UploadedFile,
@@ -65,10 +66,15 @@ export class OrdersController {
   }
 
   @Get('my')
-  findMine(@CurrentUser() user: { userId: string }, @Req() req: Request) {
+  findMine(
+    @CurrentUser() user: { userId: string },
+    @Req() req: Request,
+    @Query() query: Record<string, unknown>,
+  ) {
     return this.ordersService.findMine(
       user.userId,
       getRequestBaseUrl(req),
+      query,
     );
   }
 
@@ -108,8 +114,8 @@ export class OrdersController {
   @Get()
   @UseGuards(RolesGuard)
   @Roles('admin')
-  findAll(@Req() req: Request) {
-    return this.ordersService.findAll(getRequestBaseUrl(req));
+  findAll(@Req() req: Request, @Query() query: Record<string, unknown>) {
+    return this.ordersService.findAll(getRequestBaseUrl(req), query);
   }
 
   @Patch(':id')
