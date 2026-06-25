@@ -16,6 +16,7 @@ import {
   ORDER_TYPE_CATALOG,
   ORDER_TYPE_CUSTOM,
   toOrderUserSnippet,
+  toOrderCustomerNameFallbacks,
 } from '../common/orders/order-response.util';
 import {
   EMPTY_PAYMENT_SCREENSHOT_COLUMNS,
@@ -67,7 +68,14 @@ export class OrdersService {
     return this.ordersRepository
       .createQueryBuilder('order')
       .leftJoin('order.user', 'user')
-      .addSelect(['user.id', 'user.email', 'user.username', 'user.phone']);
+      .addSelect([
+        'user.id',
+        'user.email',
+        'user.username',
+        'user.phone',
+        'user.firstName',
+        'user.lastName',
+      ]);
   }
 
   private async findOrderWithUserById(id: string): Promise<Order | null> {
@@ -111,6 +119,7 @@ export class OrdersService {
       updatedAt: order.updatedAt,
       user: toOrderUserSnippet(order.user),
       customerEmail: order.user?.email ?? null,
+      ...toOrderCustomerNameFallbacks(order.user),
     };
   }
 

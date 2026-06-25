@@ -17,9 +17,23 @@ export function toOrderUserSnippet(user: Users | null | undefined) {
 
   return {
     id: user.id,
-    email: user.email,
+    firstName: user.firstName,
+    lastName: user.lastName,
     username: user.username,
+    email: user.email,
     phone: user.phone,
+  };
+}
+
+export function toOrderCustomerNameFallbacks(user: Users | null | undefined) {
+  const firstName = user?.firstName ?? null;
+  const lastName = user?.lastName ?? null;
+
+  return {
+    customerFirstName: firstName,
+    customerLastName: lastName,
+    customer_first_name: firstName,
+    customer_last_name: lastName,
   };
 }
 

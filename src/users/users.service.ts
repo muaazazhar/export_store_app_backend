@@ -8,6 +8,10 @@ import { InjectRepository } from '@nestjs/typeorm';
 import * as bcrypt from 'bcrypt';
 import { Repository } from 'typeorm';
 import { normalizePhone } from '../common/validation/phone.util';
+import {
+  parseOptionalPersonName,
+  pickNameInput,
+} from '../common/validation/person-name.util';
 import { Users } from '../entities/users.entity';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 
@@ -46,6 +50,8 @@ export class UsersService {
   createUser(payload: {
     email: string;
     username: string;
+    firstName: string;
+    lastName: string;
     password: string;
     phone?: string | null;
     role?: string;
@@ -55,6 +61,8 @@ export class UsersService {
     const user = this.usersRepository.create({
       email: payload.email,
       username: payload.username,
+      firstName: payload.firstName,
+      lastName: payload.lastName,
       password: payload.password,
       phone: payload.phone ?? null,
       phoneVerified: payload.phoneVerified ?? false,
@@ -151,10 +159,12 @@ export class UsersService {
     const hasUsername = dto.username !== undefined;
     const hasPhone =
       dto.phone !== undefined || dto.phone_number !== undefined;
+    const hasFirstName = pickNameInput(dto, 'firstName') !== undefined;
+    const hasLastName = pickNameInput(dto, 'lastName') !== undefined;
 
-    if (!hasUsername && !hasPhone) {
+    if (!hasUsername && !hasPhone && !hasFirstName && !hasLastName) {
       throw new BadRequestException(
-        'At least one of username or phone must be provided',
+        'At least one of username, firstName, lastName, or phone must be provided',
       );
     }
 
@@ -171,6 +181,20 @@ export class UsersService {
         throw new BadRequestException('Username already registered');
       }
       user.username = username;
+    }
+
+    if (hasFirstName) {
+      user.firstName = parseOptionalPersonName(
+        pickNameInput(dto, 'firstName'),
+        'firstName',
+      )!;
+    }
+
+    if (hasLastName) {
+      user.lastName = parseOptionalPersonName(
+        pickNameInput(dto, 'lastName'),
+        'lastName',
+      )!;
     }
 
     if (hasPhone) {

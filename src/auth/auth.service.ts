@@ -42,6 +42,10 @@ import {
   PASSWORD_RESET_TOKEN_EXPIRY_SECONDS,
 } from './password-reset.util';
 import { normalizePhone } from '../common/validation/phone.util';
+import {
+  parseRequiredPersonNames,
+  resolveGoogleProfileNames,
+} from '../common/validation/person-name.util';
 
 @Injectable()
 export class AuthService {
@@ -83,6 +87,8 @@ export class AuthService {
       throw new BadRequestException('Username cannot contain spaces');
     }
 
+    const { firstName, lastName } = parseRequiredPersonNames(dto);
+
     const existing = await this.usersService.findByEmail(email);
     if (existing) {
       throw new BadRequestException('Email already registered');
@@ -105,6 +111,8 @@ export class AuthService {
       user = await this.usersService.createUser({
         email,
         username,
+        firstName,
+        lastName,
         phone,
         password: hashedPassword,
         role: 'user',
@@ -597,6 +605,11 @@ export class AuthService {
     if (!user) {
       const usernameBase = this.normalizeUsernameFromEmail(email);
       const username = await this.getAvailableUsername(usernameBase);
+      const { firstName, lastName } = resolveGoogleProfileNames(
+        googleProfile.givenName,
+        googleProfile.familyName,
+        username,
+      );
       const generatedPasswordHash = await bcrypt.hash(
         `google:${googleProfile.sub}:${Date.now()}`,
         10,
@@ -604,6 +617,8 @@ export class AuthService {
       user = await this.usersService.createUser({
         email,
         username,
+        firstName,
+        lastName,
         password: generatedPasswordHash,
         role: 'user',
         isVerified: true,
@@ -715,7 +730,12 @@ export class AuthService {
     return tokenResult.id_token;
   }
 
-  private async validateGoogleIdToken(idToken: string): Promise<{ email: string; sub: string }> {
+  private async validateGoogleIdToken(idToken: string): Promise<{
+    email: string;
+    sub: string;
+    givenName?: string;
+    familyName?: string;
+  }> {
     const clientId = process.env.GOOGLE_CLIENT_ID;
     if (!clientId) {
       throw new InternalServerErrorException('GOOGLE_CLIENT_ID is required');
@@ -733,6 +753,8 @@ export class AuthService {
       email?: string;
       sub?: string;
       email_verified?: string;
+      given_name?: string;
+      family_name?: string;
     };
 
     if (payload.aud !== clientId) {
@@ -742,7 +764,12 @@ export class AuthService {
       throw new UnauthorizedException('Invalid Google account payload');
     }
 
-    return { email: payload.email, sub: payload.sub };
+    return {
+      email: payload.email,
+      sub: payload.sub,
+      givenName: payload.given_name,
+      familyName: payload.family_name,
+    };
   }
 
   private normalizeUsernameFromEmail(email: string): string {

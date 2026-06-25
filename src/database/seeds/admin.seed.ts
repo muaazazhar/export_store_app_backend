@@ -29,6 +29,8 @@ async function seedAdmin() {
     admin = usersRepository.create({
       email,
       username,
+      firstName: username.slice(0, 50),
+      lastName: 'Admin',
       password: hashedPassword,
       role: 'admin',
       isVerified: true,
@@ -36,6 +38,12 @@ async function seedAdmin() {
   } else {
     admin.email = email;
     admin.username = username;
+    if (!admin.firstName) {
+      admin.firstName = username.slice(0, 50);
+    }
+    if (!admin.lastName) {
+      admin.lastName = 'Admin';
+    }
     admin.password = hashedPassword;
     admin.role = 'admin';
     admin.isVerified = true;

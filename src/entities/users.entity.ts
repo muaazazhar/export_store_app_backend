@@ -11,6 +11,12 @@ export class Users {
   @Column({ unique: true })
   username: string;
 
+  @Column({ name: 'first_name', type: 'varchar', length: 50 })
+  firstName: string;
+
+  @Column({ name: 'last_name', type: 'varchar', length: 50 })
+  lastName: string;
+
   @Column({ type: 'varchar', length: 20, unique: true, nullable: true })
   phone: string | null;
 
