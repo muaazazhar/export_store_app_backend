@@ -32,9 +32,9 @@ function parseItemsField(items: unknown): CreateOrderItemInput[] {
     const raw = item as { productId?: unknown; quantity?: unknown };
     const productId = normalizeProductId(raw.productId, index);
     const quantity = Number(raw.quantity);
-    if (!Number.isFinite(quantity) || quantity <= 0) {
+    if (!Number.isFinite(quantity) || !Number.isInteger(quantity) || quantity <= 0) {
       throw new BadRequestException(
-        `items[${index}].quantity must be greater than zero`,
+        `items[${index}].quantity must be a positive integer`,
       );
     }
     return { productId, quantity };

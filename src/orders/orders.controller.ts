@@ -28,6 +28,19 @@ import { OrdersService } from './orders.service';
 export class OrdersController {
   constructor(private readonly ordersService: OrdersService) {}
 
+  @Post('custom')
+  createCustom(
+    @CurrentUser() user: { userId: string },
+    @Body() body: Record<string, unknown>,
+    @Req() req: Request,
+  ) {
+    return this.ordersService.createCustom(
+      user.userId,
+      body,
+      getRequestBaseUrl(req),
+    );
+  }
+
   @Post()
   @UseInterceptors(
     FileInterceptor('paymentScreenshot', {

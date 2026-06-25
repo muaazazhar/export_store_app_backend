@@ -17,6 +17,9 @@ export class Order {
   @Column({ type: 'int', unique: true })
   orderNo: number;
 
+  @Column({ default: 'catalog' })
+  orderType: string;
+
   @ManyToOne(() => Users)
   @JoinColumn({ name: 'userId' })
   user: Users;

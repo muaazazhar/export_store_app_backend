@@ -158,9 +158,16 @@ export class ProductsService {
              SUM((elem->>'quantity')::numeric) AS qty
       FROM "order" o,
       jsonb_array_elements(o.items::jsonb) elem
+      WHERE COALESCE(o."orderType", 'catalog') = 'catalog'
+        AND elem->>'productId' IS NOT NULL
+        AND elem->>'productId' <> ''
       GROUP BY elem->>'productId'
       ORDER BY qty DESC
     `)) as OrderQuantityRow[];
+
+    const qtyByProductId = new Map(
+      rows.map((row) => [row.productId, Number(row.qty)]),
+    );
 
     const rankedIds = rows
       .map((row) => row.productId)
@@ -175,8 +182,8 @@ export class ProductsService {
     });
 
     const sorted = [...products].sort((a, b) => {
-      const qtyA = Number(rows.find((r) => r.productId === a.id)?.qty ?? 0);
-      const qtyB = Number(rows.find((r) => r.productId === b.id)?.qty ?? 0);
+      const qtyA = qtyByProductId.get(a.id) ?? 0;
+      const qtyB = qtyByProductId.get(b.id) ?? 0;
       if (qtyB !== qtyA) {
         return qtyB - qtyA;
       }

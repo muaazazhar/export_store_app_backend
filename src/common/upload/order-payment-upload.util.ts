@@ -40,3 +40,9 @@ export function toPaymentScreenshotColumns(file: UploadedImageFile): {
     paymentScreenshotFilename: sanitizeFilename(file.originalname),
   };
 }
+
+export const EMPTY_PAYMENT_SCREENSHOT_COLUMNS = {
+  paymentScreenshotBlob: null,
+  paymentScreenshotMime: null,
+  paymentScreenshotFilename: null,
+} as const;

@@ -8,12 +8,25 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { buildApiResourceUrl } from '../common/http/api-url.util';
 import { ALLOWED_PAYMENT_METHODS } from '../common/orders/payment-methods.const';
-import { toPaymentScreenshotColumns } from '../common/upload/order-payment-upload.util';
+import {
+  generateReceiptNumber,
+  normalizeOrderAmounts,
+  normalizeOrderItemsForResponse,
+  normalizeOrderType,
+  ORDER_TYPE_CATALOG,
+  ORDER_TYPE_CUSTOM,
+  toOrderUserSnippet,
+} from '../common/orders/order-response.util';
+import {
+  EMPTY_PAYMENT_SCREENSHOT_COLUMNS,
+  toPaymentScreenshotColumns,
+} from '../common/upload/order-payment-upload.util';
 import { UploadedImageFile } from '../common/upload/uploaded-file.type';
 import { Order } from '../entities/order.entity';
 import { Product } from '../entities/product.entity';
 import { Users } from '../entities/users.entity';
 import { PaymentSettingsService } from '../payment-settings/payment-settings.service';
+import { parseCreateCustomOrderBody } from './create-custom-order-payload.util';
 import {
   normalizePaymentMethod,
   parseCreateOrderBody,
@@ -50,6 +63,27 @@ export class OrdersService {
     );
   }
 
+  private orderWithUserQuery() {
+    return this.ordersRepository
+      .createQueryBuilder('order')
+      .leftJoin('order.user', 'user')
+      .addSelect(['user.id', 'user.email', 'user.username', 'user.phone']);
+  }
+
+  private async findOrderWithUserById(id: string): Promise<Order | null> {
+    return this.orderWithUserQuery()
+      .where('order.id = :id', { id })
+      .getOne();
+  }
+
+  private async requireUser(userId: string): Promise<Users> {
+    const user = await this.usersRepository.findOne({ where: { id: userId } });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    return user;
+  }
+
   private discountedUnitPrice(product: Product): number {
     const price = Number(product.price);
     const discount = Number(product.discount ?? 0);
@@ -57,35 +91,25 @@ export class OrdersService {
   }
 
   private toOrderResponse(order: Order, baseUrl: string) {
-    const subtotalAmount = Number(order.subtotalAmount);
-    const deliveryCharge = Number(order.deliveryCharge);
-    const totalAmount = Number(order.totalAmount);
+    const amounts = normalizeOrderAmounts(order);
 
     return {
       id: order.id,
       orderNo: order.orderNo,
+      orderType: normalizeOrderType(order.orderType),
       status: order.status,
-      subtotalAmount,
-      deliveryCharge,
-      totalAmount,
-      total: totalAmount,
+      ...amounts,
       paymentMethod: order.paymentMethod,
       walletProvider: order.walletProvider,
       paymentReference: order.paymentReference,
       paymentScreenshotUrl: this.buildPaymentScreenshotUrl(order, baseUrl),
       address: order.address,
       cancellationReason: order.cancellationReason ?? null,
-      items: order.items,
+      items: normalizeOrderItemsForResponse(order.items, order.orderType),
       receiptNumber: order.receiptNumber,
       createdAt: order.createdAt,
       updatedAt: order.updatedAt,
-      user: order.user
-        ? {
-            id: order.user.id,
-            email: order.user.email,
-            username: order.user.username,
-          }
-        : null,
+      user: toOrderUserSnippet(order.user),
       customerEmail: order.user?.email ?? null,
     };
   }
@@ -133,12 +157,9 @@ export class OrdersService {
       );
     }
 
-    const user = await this.usersRepository.findOne({ where: { id: userId } });
-    if (!user) {
-      throw new NotFoundException('User not found');
-    }
+    const user = await this.requireUser(userId);
 
-    const productIds = payload.items.map((item) => item.productId);
+    const productIds = [...new Set(payload.items.map((item) => item.productId))];
     const products = await this.productsRepository.find({
       where: { id: In(productIds) },
     });
@@ -170,21 +191,18 @@ export class OrdersService {
 
     const screenshotColumns = paymentScreenshot
       ? toPaymentScreenshotColumns(paymentScreenshot)
-      : {
-          paymentScreenshotBlob: null,
-          paymentScreenshotMime: null,
-          paymentScreenshotFilename: null,
-        };
+      : EMPTY_PAYMENT_SCREENSHOT_COLUMNS;
 
     const order = this.ordersRepository.create({
       user,
+      orderType: ORDER_TYPE_CATALOG,
       address: payload.address,
       paymentMethod,
       walletProvider,
       paymentReference: payload.paymentReference,
       ...screenshotColumns,
       items: normalizedItems,
-      receiptNumber: `RCP-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      receiptNumber: generateReceiptNumber(),
       subtotalAmount,
       deliveryCharge,
       totalAmount,
@@ -196,20 +214,55 @@ export class OrdersService {
     return this.toOrderResponse(saved, baseUrl);
   }
 
-  async findMine(userId: string, baseUrl: string) {
-    const orders = await this.ordersRepository.find({
-      where: { user: { id: userId } },
-      relations: { user: true },
-      order: { orderNo: 'DESC' },
+  async createCustom(
+    userId: string,
+    body: Record<string, unknown>,
+    baseUrl: string,
+  ) {
+    const payload = parseCreateCustomOrderBody(body);
+    const user = await this.requireUser(userId);
+
+    const normalizedItems = payload.customItems.map((name) => ({
+      name,
+      quantity: 1,
+      unitPrice: 0,
+      lineTotal: 0,
+      isCustom: true,
+    }));
+
+    const order = this.ordersRepository.create({
+      user,
+      orderType: ORDER_TYPE_CUSTOM,
+      address: payload.address,
+      paymentMethod: payload.paymentMethod,
+      walletProvider: null,
+      paymentReference: null,
+      ...EMPTY_PAYMENT_SCREENSHOT_COLUMNS,
+      items: normalizedItems,
+      receiptNumber: generateReceiptNumber(),
+      subtotalAmount: 0,
+      deliveryCharge: 0,
+      totalAmount: 0,
+      status: 'pending',
+      cancellationReason: null,
     });
+    const saved = await this.ordersRepository.save(order);
+    saved.user = user;
+    return this.toOrderResponse(saved, baseUrl);
+  }
+
+  async findMine(userId: string, baseUrl: string) {
+    const orders = await this.orderWithUserQuery()
+      .where('user.id = :userId', { userId })
+      .orderBy('order.orderNo', 'DESC')
+      .getMany();
     return orders.map((order) => this.toOrderResponse(order, baseUrl));
   }
 
   async findAll(baseUrl: string) {
-    const orders = await this.ordersRepository.find({
-      relations: { user: true },
-      order: { orderNo: 'DESC' },
-    });
+    const orders = await this.orderWithUserQuery()
+      .orderBy('order.orderNo', 'DESC')
+      .getMany();
     return orders.map((order) => this.toOrderResponse(order, baseUrl));
   }
 
@@ -221,10 +274,7 @@ export class OrdersService {
       );
     }
 
-    const order = await this.ordersRepository.findOne({
-      where: { id },
-      relations: { user: true },
-    });
+    const order = await this.findOrderWithUserById(id);
     if (!order) {
       throw new NotFoundException('Order not found');
     }
@@ -253,6 +303,7 @@ export class OrdersService {
 
     order.status = nextStatus;
     const saved = await this.ordersRepository.save(order);
+    saved.user = order.user;
     return this.toOrderResponse(saved, baseUrl);
   }
 
@@ -263,7 +314,8 @@ export class OrdersService {
   ): Promise<{ buffer: Buffer; mime: string; filename: string }> {
     const order = await this.ordersRepository
       .createQueryBuilder('order')
-      .leftJoinAndSelect('order.user', 'user')
+      .leftJoin('order.user', 'user')
+      .addSelect(['user.id'])
       .addSelect('order.paymentScreenshotBlob')
       .where('order.id = :orderId', { orderId })
       .getOne();
@@ -273,7 +325,7 @@ export class OrdersService {
     }
 
     const isAdmin = role === 'admin';
-    if (!isAdmin && order.user.id !== userId) {
+    if (!isAdmin && order.user?.id !== userId) {
       throw new ForbiddenException('You can only view your own payment proof');
     }
 
@@ -294,27 +346,24 @@ export class OrdersService {
     role: string,
     baseUrl: string,
   ) {
-    const order = await this.ordersRepository.findOne({
-      where: { id: orderId },
-      relations: { user: true },
-    });
+    const order = await this.findOrderWithUserById(orderId);
     if (!order) {
       throw new NotFoundException('Order not found');
     }
 
     const isAdmin = role === 'admin';
-    if (!isAdmin && order.user.id !== userId) {
+    if (!isAdmin && order.user?.id !== userId) {
       throw new ForbiddenException('You can only view your own receipts');
     }
 
-    const subtotalAmount = Number(order.subtotalAmount);
-    const deliveryCharge = Number(order.deliveryCharge);
-    const totalAmount = Number(order.totalAmount);
+    const amounts = normalizeOrderAmounts(order);
+    const customer = toOrderUserSnippet(order.user);
 
     return {
       receiptNumber: order.receiptNumber,
       orderId: order.id,
       orderNo: order.orderNo,
+      orderType: normalizeOrderType(order.orderType),
       status: order.status,
       createdAt: order.createdAt,
       deliveryAddress: order.address,
@@ -323,16 +372,10 @@ export class OrdersService {
       paymentReference: order.paymentReference,
       paymentScreenshotUrl: this.buildPaymentScreenshotUrl(order, baseUrl),
       cancellationReason: order.cancellationReason ?? null,
-      items: order.items,
-      subtotalAmount,
-      deliveryCharge,
-      totalAmount,
-      total: totalAmount,
-      customer: {
-        id: order.user.id,
-        email: order.user.email,
-      },
-      customerEmail: order.user.email,
+      items: normalizeOrderItemsForResponse(order.items, order.orderType),
+      ...amounts,
+      customer,
+      customerEmail: customer?.email ?? null,
     };
   }
 }
